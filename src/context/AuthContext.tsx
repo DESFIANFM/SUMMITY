@@ -1,0 +1,86 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { User, UserRole } from '../types';
+
+interface AuthContextType {
+  user: User | null;
+  login: (role: UserRole, customData?: Partial<User>) => void;
+  logout: () => void;
+  updateUser: (data: Partial<User>) => void;
+  isLoading: boolean;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem('summity_user');
+      if (savedUser && savedUser !== 'undefined') {
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (error) {
+      console.error('Error parsing saved user:', error);
+      localStorage.removeItem('summity_user');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const login = (role: UserRole, customData?: Partial<User>) => {
+    // Check if we have a "remembered" user for this role if no customData is provided
+    let savedIdentity: Partial<User> | null = null;
+    if (!customData) {
+      try {
+        const lastUserStr = localStorage.getItem(`summity_last_${role.toLowerCase()}`);
+        if (lastUserStr) {
+          savedIdentity = JSON.parse(lastUserStr);
+        }
+      } catch (e) {
+        console.error('Error parsing last identity', e);
+      }
+    }
+
+    const newUser: User = {
+      id: customData?.id || savedIdentity?.id || (role === 'ADMIN' ? 'admin-1' : 'user-1'),
+      name: customData?.name || savedIdentity?.name || (role === 'ADMIN' ? 'Petugas Lapangan' : 'Pendaki'),
+      email: customData?.email || savedIdentity?.email || (role === 'ADMIN' ? 'admin@summity.com' : 'pendaki@summity.com'),
+      role,
+    };
+    setUser(newUser);
+    localStorage.setItem('summity_user', JSON.stringify(newUser));
+    // Also save as the last known for this role
+    localStorage.setItem(`summity_last_${role.toLowerCase()}`, JSON.stringify(newUser));
+  };
+
+  const updateUser = (data: Partial<User>) => {
+    setUser(prev => {
+      if (!prev) return null;
+      const updated = { ...prev, ...data };
+      localStorage.setItem('summity_user', JSON.stringify(updated));
+      localStorage.setItem(`summity_last_${updated.role.toLowerCase()}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('summity_user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

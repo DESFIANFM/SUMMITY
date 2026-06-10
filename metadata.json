@@ -1,0 +1,13 @@
+{
+  "name": "SUMMITY",
+  "description": "A PWA for climbers to manage tickets and track peaks, and for officers to scan and monitor hiker safety.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "PWA",
+    "QR Scanning",
+    "Real-time Tracking"
+  ]
+}

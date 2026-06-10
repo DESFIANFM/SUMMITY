@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-emerald-50: color-mix(in srgb, #05D5FF 8%, white);
+  --color-emerald-100: color-mix(in srgb, #05D5FF 15%, white);
+  --color-emerald-200: color-mix(in srgb, #05D5FF 30%, white);
+  --color-emerald-300: color-mix(in srgb, #05D5FF 50%, white);
+  --color-emerald-400: color-mix(in srgb, #05D5FF 75%, white);
+  --color-emerald-500: #05D5FF;
+  --color-emerald-600: color-mix(in srgb, #05D5FF 85%, black);
+  --color-emerald-700: color-mix(in srgb, #05D5FF 70%, black);
+  --color-emerald-800: color-mix(in srgb, #05D5FF 55%, black);
+  --color-emerald-900: color-mix(in srgb, #05D5FF 40%, black);
+  --color-emerald-950: color-mix(in srgb, #05D5FF 20%, black);
+}
+
+/* Leaflet Overrides */
+.leaflet-container {
+  font-family: inherit;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.custom-div-icon, .current-location-icon {
+  background: none;
+  border: none;
+}
+
+@keyframes map-ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.animate-ping {
+  animation: map-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+}
