@@ -317,6 +317,7 @@ export default function Register() {
     if (!user) return;
 
     // Save registration with logged-in "data pribadi"
+    console.log('🟡 About to call saveRegistration from Register.tsx');
     await saveRegistration({
       userId: user.id,
       name: user.name,
