@@ -217,11 +217,11 @@ export default function UserDashboard() {
         </div>
       ) : (
         <button 
-          onClick={() => navigate('/register')}
+          onClick={() => navigate('/user/simaksi')}
           className="w-full bg-emerald-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center justify-between group shadow-xl shadow-emerald-100 transition-all hover:bg-emerald-700 active:scale-[0.98]"
         >
           <div className="text-left">
-            <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Daftar SIMAKSI</h3>
+            <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Ajukan SIMAKSI</h3>
             <p className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-widest opacity-70">Pendaftaran pendakian resmi</p>
           </div>
           <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:translate-x-2 transition-transform">

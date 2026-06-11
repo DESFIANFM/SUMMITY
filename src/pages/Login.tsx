@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getSupabaseClient } from '../lib/db';
 import { Mountain, User, ShieldCheck, Lock, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -60,18 +61,85 @@ export default function Login() {
     return [defaultUser];
   };
 
-  const handleUserVerify = (e: React.FormEvent) => {
+  const handleUserVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    const users = getRegisteredUsers();
-    const matchedUser = users.find(
-      (u: any) => u.username?.toLowerCase() === username.toLowerCase() && u.password === password
-    );
+    setLoginError('');
 
-    if (matchedUser) {
-      setLoginError('');
-      handleLogin('USER', matchedUser);
-    } else {
-      setLoginError('Username atau Password pendaki salah!');
+    try {
+      // Try to lookup user in Supabase users table first (if online)
+      const supabase = getSupabaseClient();
+
+      if (supabase) {
+        console.log('[LOGIN] 🔍 Querying Supabase users table...');
+        
+        const { data: users, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('username', username)
+          .eq('password', password);
+
+        if (!error && users && users.length > 0) {
+          console.log('[LOGIN] ✅ User found in Supabase:', users[0].id);
+          const supabaseUser = users[0];
+          
+          // Map snake_case from DB to camelCase for frontend
+          const userData = {
+            id: supabaseUser.id,
+            name: supabaseUser.name,
+            email: supabaseUser.email,
+            username: supabaseUser.username,
+            password: supabaseUser.password,
+            phone: supabaseUser.phone,
+            emergencyPhone: supabaseUser.emergency_phone,
+            citizenship: supabaseUser.citizenship,
+            identityType: supabaseUser.identity_type,
+            nik: supabaseUser.nik,
+            gender: supabaseUser.gender,
+            weight: supabaseUser.weight,
+            height: supabaseUser.height,
+            province: supabaseUser.province,
+            city: supabaseUser.city,
+            district: supabaseUser.district,
+            subdistrict: supabaseUser.subdistrict,
+            address: supabaseUser.address,
+            role: supabaseUser.role || 'USER',
+          };
+
+          setLoginError('');
+          handleLogin('USER', userData);
+          return;
+        } else if (error) {
+          console.warn('[LOGIN] ⚠️ Supabase query error:', error);
+        }
+      }
+
+      // Fallback: check localStorage if Supabase is unavailable or user not found
+      console.log('[LOGIN] 📦 Falling back to localStorage lookup...');
+      const users = getRegisteredUsers();
+      const matchedUser = users.find(
+        (u: any) => u.username?.toLowerCase() === username.toLowerCase() && u.password === password
+      );
+
+      if (matchedUser) {
+        setLoginError('');
+        handleLogin('USER', matchedUser);
+      } else {
+        setLoginError('Username atau Password pendaki salah!');
+      }
+    } catch (err) {
+      console.warn('[LOGIN] ⚠️ Login error:', err);
+      // Fallback: check localStorage
+      const users = getRegisteredUsers();
+      const matchedUser = users.find(
+        (u: any) => u.username?.toLowerCase() === username.toLowerCase() && u.password === password
+      );
+
+      if (matchedUser) {
+        setLoginError('');
+        handleLogin('USER', matchedUser);
+      } else {
+        setLoginError('Username atau Password pendaki salah!');
+      }
     }
   };
 
