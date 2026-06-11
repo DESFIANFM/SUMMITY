@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       name: customData?.name || savedIdentity?.name || (role === 'ADMIN' ? 'Petugas Lapangan' : 'Pendaki'),
       email: customData?.email || savedIdentity?.email || (role === 'ADMIN' ? 'admin@summity.com' : 'pendaki@summity.com'),
       role,
+      ...customData,
     };
     setUser(newUser);
     localStorage.setItem('summity_user', JSON.stringify(newUser));

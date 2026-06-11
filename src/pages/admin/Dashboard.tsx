@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { getAllScans, getAllRegistrations, updateRegistrationStatus, deleteRegistration } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog, RegistrationRequest } from '../../types';
-import { Users, Clock, TrendingUp, Mail, Check, X, Calendar, Trash2, Phone, Fingerprint, MapPin, ChevronRight, Info, Search, Download, Filter, QrCode, Printer } from 'lucide-react';
+import { Users, User, Clock, TrendingUp, Mail, Check, X, Calendar, Trash2, Phone, Fingerprint, MapPin, ChevronRight, Info, Search, Download, Filter, QrCode, Printer } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
 
 export default function AdminDashboard() {
@@ -150,6 +150,27 @@ export default function AdminDashboard() {
   
   const totalActive = Object.values(hikerLocations).reduce((sum, loc) => sum + loc.ascent + loc.descent, 0);
 
+  const getHikerName = (ticketId: string) => {
+    if (!ticketId) return 'Pendaki Umum';
+    
+    // Parse ID from ticketId, e.g. "SUMMITY-USER-1" gets id = 1
+    // or "SUMMITY-USER-1-TICK-9942" gets id = 1
+    const match = ticketId.match(/SUMMITY-USER-(\d+)/);
+    if (match) {
+      const parsedId = parseInt(match[1], 10);
+      const reg = registrations.find(r => r.id === parsedId);
+      if (reg) {
+        return reg.name;
+      }
+    }
+    
+    // Check fallback for static/mock demo values
+    if (ticketId.includes('9942')) return 'Ahmad Fauzi';
+    if (ticketId.includes('8831')) return 'Budi Setiawan';
+    
+    return ticketId;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -292,10 +313,10 @@ export default function AdminDashboard() {
       {selectedReg && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-end sm:items-center justify-center p-4">
           <div 
-            className="w-full max-w-lg bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300"
+            className="w-full max-w-lg bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-emerald-700 p-8 text-white relative">
+            <div className="bg-emerald-700 p-8 text-white relative shrink-0">
               <button 
                 onClick={() => setSelectedReg(null)}
                 className="absolute top-6 right-6 p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors"
@@ -309,7 +330,7 @@ export default function AdminDashboard() {
               <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest opacity-70">Verifikasi data sebelum persetujuan</p>
             </div>
 
-            <div className="p-8 space-y-6">
+            <div className="p-8 space-y-6 flex-1 overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
                   <div className="flex items-center gap-2 mb-2">
@@ -323,14 +344,14 @@ export default function AdminDashboard() {
                     <Fingerprint className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NIK / Identitas</span>
                   </div>
-                  <p className="font-black text-slate-800 tracking-wider">{selectedReg.nik}</p>
+                  <p className="font-black text-slate-800 tracking-wider font-mono text-xs">{selectedReg.nik}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
                   <div className="flex items-center gap-2 mb-2">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
+                    <User className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Jenis Kelamin</span>
                   </div>
                   <p className="font-black text-slate-800">{selectedReg.gender}</p>
@@ -340,7 +361,7 @@ export default function AdminDashboard() {
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tgl Lahir</span>
                   </div>
-                  <p className="font-black text-slate-800">{selectedReg.birthDate}</p>
+                  <p className="font-black text-slate-800 text-xs">{selectedReg.birthDate}</p>
                 </div>
               </div>
 
@@ -350,23 +371,23 @@ export default function AdminDashboard() {
                     <Phone className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nomor Telepon</span>
                   </div>
-                  <p className="font-black text-slate-800">{selectedReg.phone}</p>
+                  <p className="font-black text-slate-800 text-xs font-mono">{selectedReg.phone}</p>
                 </div>
                 <div className="p-4 bg-rose-50 rounded-3xl border border-rose-100">
                   <div className="flex items-center gap-2 mb-2">
                     <Phone className="w-3.5 h-3.5 text-rose-400" />
                     <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest">No. Darurat</span>
                   </div>
-                  <p className="font-black text-rose-800">{selectedReg.emergencyPhone || '-'}</p>
+                  <p className="font-black text-rose-800 text-xs font-mono">{selectedReg.emergencyPhone || '-'}</p>
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+              <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 text-left">
                 <div className="flex items-center gap-2 mb-2">
                   <MapPin className="w-3.5 h-3.5 text-slate-400" />
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alamat (KTP)</span>
                 </div>
-                <p className="font-bold text-slate-700 text-xs leading-relaxed">{selectedReg.address}</p>
+                <p className="font-bold text-slate-705 text-xs leading-relaxed uppercase">{selectedReg.address}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -375,14 +396,60 @@ export default function AdminDashboard() {
                     <MapPin className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gunung</span>
                   </div>
-                  <p className="font-black text-slate-800 uppercase italic">{selectedReg.mountain}</p>
+                  <p className="font-black text-slate-800 uppercase italic text-xs">{selectedReg.mountain}</p>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 col-span-2">
                    <div className="flex items-center gap-2 mb-2">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Jadwal Pendakian</span>
                   </div>
-                  <p className="font-black text-slate-800">{formatDateRange(selectedReg.date, selectedReg.endDate)}</p>
+                  <p className="font-black text-slate-800 text-xs">{formatDateRange(selectedReg.date, selectedReg.endDate)}</p>
+                </div>
+
+                {/* Group details */}
+                <div className="col-span-2 p-4 bg-slate-50 rounded-3xl border border-slate-100 space-y-2.5 text-left">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-600" />
+                      <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Rombongan Kelompok</span>
+                    </div>
+                    <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded ${
+                      selectedReg.isLeader ? 'bg-emerald-100 text-emerald-850 animate-pulse' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {selectedReg.isLeader ? 'Ketua Kelompok' : 'Solo'}
+                    </span>
+                  </div>
+
+                  {selectedReg.isLeader ? (
+                    <div className="space-y-3.5">
+                      <div className="space-y-1">
+                        <span className="block text-[8px] text-slate-400 font-extrabold uppercase tracking-wider">Anggota Terdaftar ({selectedReg.members?.length || 0} Orang):</span>
+                        {selectedReg.members && selectedReg.members.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-32 overflow-y-auto pr-0.5">
+                            {selectedReg.members.map((m: any, idx: number) => (
+                              <div key={idx} className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[10px] flex items-center justify-between">
+                                <span className="font-extrabold text-slate-850 uppercase">{m.name}</span>
+                                <span className="font-mono text-[8px] text-slate-400 font-extrabold bg-slate-50 px-1 py-0.5 rounded leading-none">ID: {m.id}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] font-bold text-slate-400 italic">Tidak ada anggota yang diinput.</p>
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200/55 flex items-center justify-between text-[10px]">
+                        <span className="text-slate-400 font-black uppercase tracking-wider">Pernyataan Alat Mandat</span>
+                        <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded">
+                          {selectedReg.checkedGears?.length || 0} / 11 Alat Siap
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[9px] text-slate-450 font-bold leading-normal italic">
+                      Pendaki mendaftar solo. Pengecekan barang bawaan dilakukan manual dan wajib diverifikasi oleh petugas lapangan di pos loket.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -497,6 +564,9 @@ export default function AdminDashboard() {
               <QrCode className="w-5 h-5 text-emerald-600 animate-pulse" />
               Pusat Cetak & Simulator QR Code
             </h3>
+            <p className="text-xs text-slate-400 font-medium mt-0.5">
+              Gunakan perangkat kamera PWA Anda untuk men-scan QR code di bawah ini selama pengujian sistem / sidang.
+            </p>
           </div>
           <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 self-start sm:self-center">
             <button
@@ -737,9 +807,9 @@ export default function AdminDashboard() {
                   log.type === 'CHECK_IN' ? 'bg-emerald-500' : (log.type === 'CHECK_OUT' ? 'bg-rose-500' : 'bg-sky-500')
                 }`}></div>
                 <div>
-                  <div className="text-sm font-black text-slate-700">{log.ticketId}</div>
+                  <div className="text-sm font-black text-slate-700">{getHikerName(log.ticketId)}</div>
                   <div className="text-[10px] text-slate-400 font-bold uppercase">
-                    {MOUNTAIN_POS[log.posId || 0]?.name || 'Lokasi Tidak Diketahui'}
+                    {log.ticketId} • {MOUNTAIN_POS[log.posId || 0]?.name || 'Lokasi Tidak Diketahui'}
                   </div>
                 </div>
               </div>

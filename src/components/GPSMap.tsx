@@ -17,9 +17,16 @@ function ChangeView({ center }: { center: [number, number] }) {
 interface GPSMapProps {
   currentPosIndex: number;
   mountainName?: string;
+  userScans?: any[];
+  direction?: 'ASCENT' | 'DESCENT';
 }
 
-export default function GPSMap({ currentPosIndex, mountainName = 'Gn. Slamet' }: GPSMapProps) {
+export default function GPSMap({ 
+  currentPosIndex, 
+  mountainName = 'Gn. Slamet',
+  userScans = [],
+  direction = 'ASCENT'
+}: GPSMapProps) {
   const [downloading, setDownloading] = useState(false);
   const [cachingStatus, setCachingStatus] = useState<'idle' | 'success'>('idle');
 
@@ -27,6 +34,37 @@ export default function GPSMap({ currentPosIndex, mountainName = 'Gn. Slamet' }:
   
   const center: [number, number] = currentPos.coords || [-7.2285, 109.2198];
   const trackPath = MOUNTAIN_POS.map(p => p.coords as [number, number]);
+
+  const getMaxPosIdReached = () => {
+    if (userScans && userScans.length > 0) {
+      let maxVal = currentPosIndex;
+      userScans.forEach(s => {
+        if (s.posId > maxVal) {
+          maxVal = s.posId;
+        }
+      });
+      return maxVal;
+    }
+    return direction === 'DESCENT' ? MOUNTAIN_POS.length - 1 : currentPosIndex;
+  };
+  const maxPosIdReached = getMaxPosIdReached();
+
+  const getPositionState = (posId: number): 'ASCENT' | 'DESCENT' | 'UNREACHED' => {
+    if (direction === 'DESCENT') {
+      if (posId <= currentPosIndex) {
+        return 'ASCENT';
+      }
+      if (posId <= maxPosIdReached) {
+        return 'DESCENT';
+      }
+      return 'UNREACHED';
+    } else {
+      if (posId <= currentPosIndex) {
+        return 'ASCENT';
+      }
+      return 'UNREACHED';
+    }
+  };
 
   const handleDownload = () => {
     setDownloading(true);
@@ -69,25 +107,52 @@ export default function GPSMap({ currentPosIndex, mountainName = 'Gn. Slamet' }:
         />
 
         {/* Checkpoints */}
-        {MOUNTAIN_POS.map((pos) => (
-          <Marker 
-            key={pos.id} 
-            position={pos.coords || [0, 0]}
-            icon={L.divIcon({
-              className: 'custom-div-icon',
-              html: `<div class="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${pos.id <= currentPosIndex ? 'bg-emerald-500' : 'bg-slate-400'} shadow-lg transition-all duration-500">
-                ${pos.id <= currentPosIndex ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M20 6 9 17l-5-5"/></svg>' : ''}
-              </div>`,
-              iconSize: [24, 24],
-              iconAnchor: [12, 12],
-            })}
-          >
-            <Popup>
-              <div className="font-bold">{pos.name}</div>
-              <div className="text-[10px] text-slate-500">{pos.elevation} MDPL</div>
-            </Popup>
-          </Marker>
-        ))}
+        {MOUNTAIN_POS.map((pos) => {
+          const state = getPositionState(pos.id);
+          
+          let htmlContent = '';
+          let iconWidth = 24;
+          let iconHeight = 24;
+
+          if (state === 'DESCENT') {
+            htmlContent = `
+              <div class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center bg-rose-500 shadow-lg transition-all duration-500">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+              </div>
+            `;
+          } else if (state === 'ASCENT') {
+            htmlContent = `
+              <div class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center bg-blue-500 shadow-lg transition-all duration-500">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              </div>
+            `;
+          } else {
+            iconWidth = 20;
+            iconHeight = 20;
+            htmlContent = `
+              <div class="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center bg-slate-400 shadow-lg transition-all duration-500">
+              </div>
+            `;
+          }
+
+          return (
+            <Marker 
+              key={pos.id} 
+              position={pos.coords || [0, 0]}
+              icon={L.divIcon({
+                className: 'custom-div-icon',
+                html: htmlContent,
+                iconSize: [iconWidth, iconHeight],
+                iconAnchor: [iconWidth / 2, iconHeight / 2],
+              })}
+            >
+              <Popup>
+                <div className="font-bold">{pos.name}</div>
+                <div className="text-[10px] text-slate-500">{pos.elevation} MDPL</div>
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {/* Current Location Indicator */}
         <Marker 

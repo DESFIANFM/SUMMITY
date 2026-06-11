@@ -5,7 +5,7 @@ import { MOCK_TICKETS } from '../../lib/mockData';
 import { getAllRegistrations, deleteRegistration } from '../../lib/db';
 import { RegistrationRequest } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { Calendar, MapPin, QrCode, PlusCircle, Clock, AlertCircle, Trash2, Camera } from 'lucide-react';
+import { Calendar, MapPin, QrCode, PlusCircle, Clock, AlertCircle, Trash2, Camera, Users, ShieldCheck } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
 
 export default function UserTickets() {
@@ -20,7 +20,7 @@ export default function UserTickets() {
       const regs = await getAllRegistrations();
       // Filter by current user and sort newest first
       const userRegs = regs
-        .filter(r => r.userId === user?.id)
+        .filter(r => r.userId === user?.id || (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase())))
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         
       setRegistrations(userRegs);
@@ -34,8 +34,9 @@ export default function UserTickets() {
   // Find the single best active registration (the one that owns the ticket UI)
   const approvedReg = registrations.find(r => r.status === 'APPROVED');
   const pendingReg = registrations.find(r => r.status === 'PENDING');
+  const rejectedReg = registrations.find(r => r.status === 'REJECTED');
   
-  const currentBestReg = approvedReg || pendingReg;
+  const featuredReg = approvedReg || pendingReg || rejectedReg;
   
   const handleDelete = async (id: number) => {
     if (confirm('Batalkan dan hapus registrasi ini?')) {
@@ -43,13 +44,13 @@ export default function UserTickets() {
     }
   };
 
-  const activeTicket = approvedReg ? {
-    id: `TICK-${approvedReg.id}`,
-    mountainName: approvedReg.mountain,
-    date: approvedReg.date,
-    endDate: approvedReg.endDate,
-    status: 'ACTIVE',
-    qrCode: `SUMMITY-USER-${approvedReg.id}`
+  const activeTicket = featuredReg ? {
+    id: `TICK-${featuredReg.id}`,
+    mountainName: featuredReg.mountain,
+    date: featuredReg.date,
+    endDate: featuredReg.endDate,
+    status: featuredReg.status,
+    qrCode: `SUMMITY-USER-${featuredReg.id}`
   } : null;
 
   if (loading) return (
@@ -61,13 +62,15 @@ export default function UserTickets() {
 
   return (
     <div className="space-y-6">
-      {/* Pending/Rejected Registrations */}
-      {registrations.filter(r => r.status !== 'APPROVED').map(reg => (
+      {/* Other Registrations List */}
+      {registrations.filter(r => r.id !== featuredReg?.id).map(reg => (
         <div key={reg.id} className="bg-white rounded-3xl border-2 border-dashed border-slate-200 p-6 flex items-center justify-between shadow-sm relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-amber-400 group-last:bg-rose-400"></div>
           <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-2xl ${reg.status === 'PENDING' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
-              {reg.status === 'PENDING' ? <Clock className="w-6 h-6 animate-pulse" /> : <AlertCircle className="w-6 h-6" />}
+            <div className={`p-3 rounded-2xl ${
+              reg.status === 'PENDING' ? 'bg-amber-100 text-amber-600' : (reg.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600')
+            }`}>
+              {reg.status === 'PENDING' ? <Clock className="w-6 h-6 animate-pulse" /> : (reg.status === 'APPROVED' ? <QrCode className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />)}
             </div>
             <div>
               <h4 className="font-black text-slate-800 leading-none mb-1 uppercase tracking-tighter italic">{reg.mountain}</h4>
@@ -76,9 +79,9 @@ export default function UserTickets() {
               </p>
               <div className="flex items-center gap-2">
                 <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
-                  reg.status === 'PENDING' ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'
+                  reg.status === 'PENDING' ? 'bg-amber-50 text-amber-600' : (reg.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')
                 }`}>
-                  {reg.status === 'PENDING' ? 'MENUNGGU KONFIRMASI' : 'REGISTRASI DITOLAK'}
+                  {reg.status === 'PENDING' ? 'MENUNGGU KONFIRMASI' : (reg.status === 'APPROVED' ? 'DISETUJUI' : 'REGISTRASI DITOLAK')}
                 </span>
               </div>
             </div>
@@ -156,6 +159,21 @@ export default function UserTickets() {
             <div className="text-center mb-6">
               <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">KODE TIKET</div>
               <div className="text-lg sm:text-xl font-mono font-bold text-slate-800">{activeTicket.id}</div>
+              <div className="mt-1.5 flex justify-center">
+                <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                  activeTicket.status === 'APPROVED'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : activeTicket.status === 'PENDING'
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-rose-100 text-rose-700'
+                }`}>
+                  {activeTicket.status === 'APPROVED'
+                    ? 'DISETUJUI / AKTIF'
+                    : activeTicket.status === 'PENDING'
+                    ? 'MENUNGGU VERIFIKASI'
+                    : 'DITOLAK'}
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-col gap-3 w-full mb-6 max-w-xs">
@@ -168,7 +186,7 @@ export default function UserTickets() {
               </button>
             </div>
 
-            <div className="w-full pt-5 border-t border-slate-100">
+            <div className="w-full pt-5 border-t border-slate-100 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="bg-slate-100 p-2 rounded-xl">
                   <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
@@ -179,6 +197,63 @@ export default function UserTickets() {
                     {formatDateRange(activeTicket.date, activeTicket.endDate)}
                   </div>
                 </div>
+              </div>
+
+              {/* Group & Role Information */}
+              <div className="bg-slate-50/70 rounded-2xl p-4.5 border border-slate-100/80 space-y-3.5 text-left w-full">
+                <div className="flex items-center justify-between border-b border-slate-200/50 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-emerald-600" />
+                    <span className="text-[10px] font-black text-slate-800 uppercase tracking-tight">Status Rombongan</span>
+                  </div>
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${
+                    featuredReg?.userId === user?.id 
+                      ? 'bg-emerald-100 text-emerald-800' 
+                      : (featuredReg?.members?.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()) 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-slate-200 text-slate-600')
+                  }`}>
+                    {featuredReg?.userId === user?.id 
+                      ? 'Ketua Kelompok' 
+                      : (featuredReg?.members?.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()) 
+                          ? 'Anggota Kelompok' 
+                          : 'Solo Climber')}
+                  </span>
+                </div>
+
+                {featuredReg?.isLeader ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <span className="block text-[8px] text-slate-400 font-extrabold uppercase tracking-wider">Anggota Terdaftar ({featuredReg.members?.length || 0} Orang):</span>
+                      {featuredReg.members && featuredReg.members.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-1.5 max-h-32 overflow-y-auto pr-0.5">
+                          {featuredReg.members.map((m: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl px-2.5 py-1.5 text-[10px]">
+                              <span className="font-extrabold text-slate-805 uppercase">{m.name}</span>
+                              <span className="font-mono text-[8px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">ID: {m.id}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400 block">Belum ada anggota rombongan ditambahkan.</span>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200/40 flex items-center justify-between text-[10px]">
+                      <div className="flex items-center gap-1 text-slate-500 font-bold">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Kesiapan Alat Wajib</span>
+                      </div>
+                      <span className="font-mono font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                        {featuredReg.checkedGears?.length || 0} / 11 Alat Siap
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[9px] text-slate-450 font-bold tracking-normal leading-normal italic">
+                    * Terdaftar sebagai pendaki tunggal. Perlengkapan wajib diperiksa secara mandiri di pos registrasi sebelum mendaki.
+                  </p>
+                )}
               </div>
             </div>
           </div>

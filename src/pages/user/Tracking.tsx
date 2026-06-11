@@ -16,6 +16,7 @@ export default function UserTracking() {
   const [showMap, setShowMap] = useState(true);
   const [mountainName, setMountainName] = useState<string>('Gn. Slamet');
   const [direction, setDirection] = useState<'ASCENT' | 'DESCENT'>('ASCENT');
+  const [scansList, setScansList] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [registrationStatus, setRegistrationStatus] = useState<'NONE' | 'PENDING' | 'APPROVED'>('NONE');
@@ -25,8 +26,8 @@ export default function UserTracking() {
       // 1. Get registrations for current user
       const regs = await getAllRegistrations();
       const userRegs = regs
-        .filter(r => r.userId === user?.id)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          .filter(r => r.userId === user?.id || (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase())))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
       const approvedReg = userRegs.find(r => r.status === 'APPROVED');
       const pendingReg = userRegs.find(r => r.status === 'PENDING');
@@ -45,15 +46,24 @@ export default function UserTracking() {
       // 2. Get scans for this ticket
       const scans = await getAllScans();
       const userScans = scans.filter(s => s.ticketId === ticketId);
+      setScansList(userScans);
       const lastScan = userScans[userScans.length - 1];
       
       if (lastScan) {
         setCurrentPosIndex(lastScan.posId);
         setLastScanTime(new Date(lastScan.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         
-        // Detect direction
-        const reachedPeak = userScans.some(s => s.posId === MOUNTAIN_POS.length - 1);
-        if (reachedPeak && lastScan.posId < MOUNTAIN_POS.length - 1) {
+        // Detect direction: either they reached peak and are returning, OR they aborted early and are returning.
+        // We find the maximum posId they reached during this trip.
+        let maxPosIdReached = -1;
+        userScans.forEach(s => {
+          if (s.posId > maxPosIdReached) {
+            maxPosIdReached = s.posId;
+          }
+        });
+        
+        // If they are currently at a position lower than the highest peak they reached, they are on DESCENT.
+        if (maxPosIdReached > lastScan.posId) {
           setDirection('DESCENT');
         } else {
           setDirection('ASCENT');
@@ -162,7 +172,12 @@ export default function UserTracking() {
 
       {showMap ? (
         <div className="space-y-4">
-          <GPSMap currentPosIndex={currentPosIndex} mountainName={mountainName} />
+          <GPSMap 
+            currentPosIndex={currentPosIndex} 
+            mountainName={mountainName} 
+            userScans={scansList} 
+            direction={direction} 
+          />
           <div className="bg-emerald-900 rounded-[2.5rem] p-5 sm:p-6 text-white shadow-xl relative overflow-hidden">
              <div className="absolute top-0 right-0 p-4 opacity-10">
                <Map className="w-24 h-24" />

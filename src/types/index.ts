@@ -5,6 +5,21 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  citizenship?: string;
+  identityType?: string;
+  nik?: string;
+  phone?: string;
+  emergencyPhone?: string;
+  gender?: 'Laki-laki' | 'Perempuan';
+  weight?: string;
+  height?: string;
+  province?: string;
+  city?: string;
+  district?: string;
+  subdistrict?: string;
+  address?: string;
+  username?: string;
+  password?: string;
 }
 
 export interface Pos {
@@ -31,6 +46,9 @@ export interface RegistrationRequest {
   endDate: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   createdAt: string;
+  isLeader?: boolean;
+  members?: { id: string; name: string }[];
+  checkedGears?: string[];
 }
 
 export interface Ticket {

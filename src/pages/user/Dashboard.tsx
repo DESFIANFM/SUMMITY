@@ -35,7 +35,10 @@ export default function UserDashboard() {
       const scans = (await getAllScans()) as ScanLog[];
       const regs = await getAllRegistrations();
       
-      const userRegs = regs.filter(r => r.userId === user?.id);
+      const userRegs = regs.filter(r => 
+        r.userId === user?.id || 
+        (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()))
+      );
       
       // Sort userRegs by createdAt descending to get newest first reliably
       const sortedUserRegs = [...userRegs].sort((a, b) => 
@@ -183,6 +186,33 @@ export default function UserDashboard() {
                 {formatDateRange(activeTicket.date, activeTicket.endDate)}
               </p>
             </div>
+            {activeTicket.isLeader && (
+              <div className={`col-span-2 p-3.5 rounded-2xl border flex justify-between items-center text-left ${
+                activeTicket.userId === user?.id 
+                  ? 'bg-emerald-50/40 border-emerald-100/60' 
+                  : 'bg-blue-50/40 border-blue-100/60'
+              }`}>
+                <div>
+                  <p className={`text-[7.5px] font-black uppercase tracking-widest mb-1 ${
+                    activeTicket.userId === user?.id ? 'text-emerald-700/80' : 'text-blue-700/80'
+                  }`}>
+                    {activeTicket.userId === user?.id ? 'SISTEM KELOMPOK (KETUA)' : 'SISTEM KELOMPOK (ANGGOTA)'}
+                  </p>
+                  <p className="font-black text-slate-800 text-[10.5px] uppercase leading-tight">
+                    {activeTicket.userId === user?.id 
+                      ? `Membawa ${activeTicket.members?.length || 0} Anggota Rombongan`
+                      : `Tergabung dalam Rombongan Kelompok`}
+                  </p>
+                </div>
+                <span className={`text-[9px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 ${
+                  activeTicket.userId === user?.id 
+                    ? 'text-emerald-700 bg-emerald-100/60' 
+                    : 'text-blue-700 bg-blue-100/60'
+                }`}>
+                  {activeTicket.checkedGears?.length || 0} / 11 Alat Siap
+                </span>
+              </div>
+            )}
           </div>
         </div>
       ) : (

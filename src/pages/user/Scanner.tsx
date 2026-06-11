@@ -28,7 +28,10 @@ export default function UserScanner() {
   useEffect(() => {
     const checkStatus = async () => {
       const regs = await getAllRegistrations();
-      const userRegs = regs.filter(r => r.userId === user?.id);
+      const userRegs = regs.filter(r => 
+        r.userId === user?.id || 
+        (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()))
+      );
       
       const approvedReg = userRegs.find(r => r.status === 'APPROVED');
       const pendingReg = userRegs.find(r => r.status === 'PENDING');
@@ -54,7 +57,14 @@ export default function UserScanner() {
       "user-reader",
       { 
         fps: 10, 
-        qrbox: { width: 250, height: 250 },
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const qrboxSize = Math.floor(minEdge * 0.7);
+          return {
+            width: qrboxSize < 180 ? 180 : (qrboxSize > 250 ? 250 : qrboxSize),
+            height: qrboxSize < 180 ? 180 : (qrboxSize > 250 ? 250 : qrboxSize)
+          };
+        },
         aspectRatio: 1.0,
       },
       false
@@ -83,7 +93,10 @@ export default function UserScanner() {
       let ticketId = '';
       
       const regs = await getAllRegistrations();
-      const approved = regs.find(r => r.userId === user?.id && r.status === 'APPROVED');
+      const approved = regs.find(r => 
+        (r.userId === user?.id || (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()))) && 
+        r.status === 'APPROVED'
+      );
       
       if (approved) {
         ticketId = `SUMMITY-USER-${approved.id}`;
@@ -180,6 +193,72 @@ export default function UserScanner() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <style>{`
+        #user-reader {
+          border: none !important;
+          width: 100% !important;
+          background: #000000 !important;
+        }
+        #user-reader video {
+          width: 100% !important;
+          height: auto !important;
+          max-height: 70vh !important;
+          object-fit: cover !important;
+          border-radius: 1.5rem !important;
+        }
+        #user-reader img {
+          max-width: 100% !important;
+          margin: 0 auto !important;
+        }
+        #user-reader__dashboard {
+          width: 100% !important;
+          padding: 1rem 0.5rem !important;
+          box-sizing: border-box !important;
+          background: #ffffff !important;
+          border-radius: 0 0 1.5rem 1.5rem !important;
+        }
+        #user-reader__dashboard_section_csr button,
+        #user-reader__dashboard_section_csr a {
+          background-color: #10b981 !important;
+          color: white !important;
+          border: none !important;
+          padding: 0.65rem 1.25rem !important;
+          border-radius: 0.75rem !important;
+          font-size: 0.75rem !important;
+          font-weight: 800 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 0.05em !important;
+          box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2) !important;
+          cursor: pointer !important;
+          transition: all 0.2s !important;
+        }
+        #user-reader__dashboard_section_csr button:hover {
+          background-color: #059669 !important;
+          transform: translateY(-1px) !important;
+        }
+        #user-reader__dashboard_section_csr select {
+          background-color: #f8fafc !important;
+          border: 1px solid #e2e8f0 !important;
+          padding: 0.65rem !important;
+          border-radius: 0.75rem !important;
+          font-size: 0.75rem !important;
+          max-width: 100% !important;
+          outline: none !important;
+          font-weight: 700 !important;
+          color: #334155 !important;
+        }
+        #user-reader__camera_selection {
+          max-width: 100% !important;
+        }
+        #user-reader__scan_region {
+          display: flex !important;
+          justify-content: center !important;
+          align-items: center !important;
+          background: #000000 !important;
+          border-radius: 1.5rem 1.5rem 0 0 !important;
+          overflow: hidden !important;
+        }
+      `}</style>
       {!scanResult && (
         <div className="bg-white p-4 sm:p-6 rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative">
           <div className="absolute top-4 right-6 z-10">
@@ -188,7 +267,7 @@ export default function UserScanner() {
                 LENSA AKTIF
              </div>
           </div>
-          <div id="user-reader" className="rounded-[1.5rem] sm:rounded-[2rem] bg-black overflow-hidden aspect-square sm:aspect-video md:aspect-square"></div>
+          <div id="user-reader" className="rounded-[1.5rem] sm:rounded-[2rem] bg-black overflow-hidden w-full"></div>
           <div className="mt-6 flex items-center gap-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
              <div className="bg-emerald-100 p-2 rounded-xl">
                 <Navigation className="w-4 h-4 text-emerald-600" />
