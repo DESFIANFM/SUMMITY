@@ -20,6 +20,7 @@ import {
   Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getSupabaseClient, syncAllUnsyncedData } from '../lib/db';
 
 // Components for User Popups
 import UserTickets from '../pages/user/Tickets';
@@ -32,6 +33,10 @@ export default function Layout() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [copiedId, setCopiedId] = useState(false);
+  
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced'>('idle');
+  const hasSupabase = !!getSupabaseClient();
   
   const activeView = searchParams.get('view');
 
@@ -53,6 +58,36 @@ export default function Layout() {
     }
   };
 
+  // Connection listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncStatus('syncing');
+      syncAllUnsyncedData()
+        .then(() => setSyncStatus('synced'))
+        .catch(() => setSyncStatus('idle'));
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial sync
+    if (isOnline && hasSupabase) {
+      setSyncStatus('syncing');
+      syncAllUnsyncedData()
+        .then(() => setSyncStatus('synced'))
+        .catch(() => setSyncStatus('idle'));
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [isOnline, hasSupabase]);
+
   // Prevent background scroll when popup is open
   useEffect(() => {
     if (activeView) {
@@ -70,14 +105,30 @@ export default function Layout() {
       {/* Header */}
       <header className="bg-emerald-700 text-white shadow-lg sticky top-0 z-[100]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-black text-xl cursor-pointer italic tracking-tighter shrink-0" onClick={() => setView('home')}>
-            <Mountain className="w-6 h-6" />
-            <span>Summity</span>
-            {user.role === 'ADMIN' && (
-              <span className="bg-amber-400 text-amber-950 text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest ml-2 not-italic font-black">
-                Admin
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 shrink-0">
+            <div className="flex items-center gap-2 font-black text-xl cursor-pointer italic tracking-tighter" onClick={() => setView('home')}>
+              <Mountain className="w-6 h-6" />
+              <span>Summity</span>
+              {user.role === 'ADMIN' && (
+                <span className="bg-amber-400 text-amber-950 text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest ml-2 not-italic font-black">
+                  Admin
+                </span>
+              )}
+            </div>
+            
+            {/* Sync Status Badge */}
+            <div className="flex items-center gap-1.5 bg-emerald-800/60 px-2.5 py-1 rounded-full border border-emerald-500/10 self-start sm:self-auto">
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                !hasSupabase ? 'bg-slate-400' :
+                !isOnline ? 'bg-amber-400' :
+                syncStatus === 'syncing' ? 'bg-amber-300 animate-ping' : 'bg-emerald-400'
+              }`} />
+              <span className="text-[8px] font-black uppercase tracking-wider text-emerald-100">
+                {!hasSupabase ? 'Mode Lokal' :
+                 !isOnline ? 'Offline (Lokal)' :
+                 syncStatus === 'syncing' ? 'Menyelaraskan...' : 'Koneksi Supabase'}
               </span>
-            )}
+            </div>
           </div>
           
           <div className="flex items-center gap-3">

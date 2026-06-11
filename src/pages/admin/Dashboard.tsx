@@ -155,13 +155,20 @@ export default function AdminDashboard() {
     
     // Parse ID from ticketId, e.g. "SUMMITY-USER-1" gets id = 1
     // or "SUMMITY-USER-1-TICK-9942" gets id = 1
-    const match = ticketId.match(/SUMMITY-USER-(\d+)/);
-    if (match) {
-      const parsedId = parseInt(match[1], 10);
-      const reg = registrations.find(r => r.id === parsedId);
-      if (reg) {
-        return reg.name;
-      }
+    // Try to extract legacy numeric id or display id
+    const numMatch = ticketId.match(/SUMMITY-USER-(\d+)/);
+    if (numMatch) {
+      const parsedId = numMatch[1];
+      const reg = registrations.find(r => String((r as any).id) === parsedId || (r as any).displayId === `USER-${parsedId}`);
+      if (reg) return reg.name;
+    }
+
+    // Try matching full displayId patterns like SUMMITY-USER-XXXXXX or SUMMITY-USER-<displayId>-TICK-...
+    const displayMatch = ticketId.match(/SUMMITY-USER-([A-Z0-9-]+)/i);
+    if (displayMatch) {
+      const display = `USER-${displayMatch[1]}`;
+  const reg = registrations.find(r => (r as any).displayId === display || String(r.id) === displayMatch[1]);
+      if (reg) return reg.name;
     }
     
     // Check fallback for static/mock demo values
