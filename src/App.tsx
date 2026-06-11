@@ -15,7 +15,6 @@ import UserTickets from './pages/user/Tickets';
 import UserTracking from './pages/user/Tracking';
 import UserScanner from './pages/user/Scanner';
 import UserRegister from './pages/user/Register';
-import SimaksiSubmit from './pages/user/SimaksiSubmit';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminScanner from './pages/admin/Scanner';
 
@@ -37,16 +36,6 @@ function AppRoutes() {
           } />
           
           {/* User Specific */}
-          <Route path="/user/dashboard" element={
-            <ProtectedRoute allowedRole="USER">
-              <UserDashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/user/simaksi" element={
-            <ProtectedRoute allowedRole="USER">
-              <SimaksiSubmit />
-            </ProtectedRoute>
-          } />
           <Route path="/tickets" element={
             <ProtectedRoute allowedRole="USER">
               <UserTickets />
