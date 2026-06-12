@@ -1,5 +1,5 @@
   import { openDB, IDBPDatabase } from 'idb';
-  import { ScanLog, RegistrationRequest } from '../types';
+  import { ScanLog, RegistrationRequest, SimaksiRequest } from '../types';
   import { createClient } from '@supabase/supabase-js';
 
   console.log('🔵 db.ts loaded');
@@ -7,6 +7,7 @@
   const DB_NAME = 'summity-db';
   const STORE_NAME = 'scans';
   const REG_STORE = 'registrations';
+  const SIMAKSI_STORE = 'simaksi';
 
   // Utility: convert camelCase keys to snake_case for Supabase/Postgres
   function toSnakeCaseKey(key: string): string {
@@ -97,7 +98,7 @@
   }
 
   export async function initDB() {
-    return openDB(DB_NAME, 6, {
+    return openDB(DB_NAME, 7, {
       upgrade(db, oldVersion, newVersion, transaction) {
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const store = db.createObjectStore(STORE_NAME, {
@@ -111,7 +112,7 @@
             store.createIndex('synced', 'synced');
           }
         }
-        
+
         if (!db.objectStoreNames.contains(REG_STORE)) {
           const store = db.createObjectStore(REG_STORE, {
             keyPath: 'id',
@@ -123,6 +124,15 @@
           if (!store.indexNames.contains('synced')) {
             store.createIndex('synced', 'synced');
           }
+        }
+
+        if (!db.objectStoreNames.contains(SIMAKSI_STORE)) {
+          const store = db.createObjectStore(SIMAKSI_STORE, {
+            keyPath: 'id',
+            autoIncrement: true,
+          });
+          store.createIndex('synced', 'synced');
+          store.createIndex('ketuaUserId', 'ketuaUserId');
         }
       },
     });
@@ -673,28 +683,29 @@
   // DATABASE SYNCHRONIZATION FUNCTION
   // --------------------------------------------------------------------
 
-  export async function syncAllUnsyncedData(): Promise<{ registrationsSynced: number, scansSynced: number }> {
+  export async function syncAllUnsyncedData(): Promise<{ registrationsSynced: number, scansSynced: number, simaksiSynced: number }> {
     const supabase = getSupabaseClient();
     let registrationsSynced = 0;
     let scansSynced = 0;
+    let simaksiSynced = 0;
 
     console.log('[SYNC-ALL] 🔄 Starting data sync check...');
     console.log('[SYNC-ALL] Online:', isOnline(), 'HasSupabase:', !!supabase);
-    
+
     if (!supabase || !isOnline()) {
       console.log('[SYNC-ALL] ⏸️  Sync blocked - will try again when online');
-      return { registrationsSynced, scansSynced };
+      return { registrationsSynced, scansSynced, simaksiSynced };
     }
 
     try {
       const db = await initDB();
-      
+
       // Sync registrations
       const regs = await db.getAll(REG_STORE);
       console.log('[SYNC-ALL] 📋 Found', regs.length, 'registrations total');
       const unsyncedRegs = regs.filter(r => !r.synced);
       console.log('[SYNC-ALL] 📋 Unsynced registrations:', unsyncedRegs.length);
-      
+
       for (const reg of unsyncedRegs) {
         const success = await trySyncRegistration(reg);
         if (success) {
@@ -703,12 +714,24 @@
         }
       }
 
+      // Sync simaksi
+      const simaksiList = await db.getAll(SIMAKSI_STORE);
+      const unsyncedSimaksi = simaksiList.filter((s: any) => !s.synced);
+      console.log('[SYNC-ALL] 🏔️  Unsynced simaksi:', unsyncedSimaksi.length);
+      for (const s of unsyncedSimaksi) {
+        const success = await trySyncSimaksi(s);
+        if (success) {
+          simaksiSynced++;
+          console.log('[SYNC-ALL] ✅ Simaksi', s.id, 'synced');
+        }
+      }
+
       // Sync scans
       const scans = await db.getAll(STORE_NAME);
       console.log('[SYNC-ALL] 📊 Found', scans.length, 'scans total');
       const unsyncedScans = scans.filter(s => !s.synced);
       console.log('[SYNC-ALL] 📊 Unsynced scans:', unsyncedScans.length);
-      
+
       for (const scan of unsyncedScans) {
         const success = await trySyncScan(scan);
         if (success) {
@@ -716,13 +739,354 @@
           console.log('[SYNC-ALL] ✅ Scan', scan.id, 'synced');
         }
       }
-      
-      console.log('[SYNC-ALL] ✅ Sync complete! Registrations:', registrationsSynced, 'Scans:', scansSynced);
+
+      console.log('[SYNC-ALL] ✅ Sync complete! Registrations:', registrationsSynced, 'Simaksi:', simaksiSynced, 'Scans:', scansSynced);
     } catch (err) {
       console.error('[SYNC-ALL] ❌ Sync failed:', err);
     }
 
-    return { registrationsSynced, scansSynced };
+    return { registrationsSynced, scansSynced, simaksiSynced };
+  }
+
+  // --------------------------------------------------------------------
+  // SIMAKSI SYNC LOGIC
+  // --------------------------------------------------------------------
+
+  export async function trySyncSimaksi(data: any): Promise<boolean> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !isOnline()) return false;
+
+    try {
+      // Pastikan ketuaUserId adalah UUID yang benar-benar ada di tabel users
+      let ketuaUUID: string = data.ketuaUserId;
+      if (!isValidUUID(ketuaUUID)) {
+        const { data: ketuaRow } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id_pendaki', ketuaUUID)
+          .maybeSingle();
+        if (!ketuaRow) {
+          console.warn('[SIMAKSI] Ketua user_id tidak ditemukan di tabel users:', ketuaUUID);
+          return false;
+        }
+        ketuaUUID = ketuaRow.id;
+      }
+
+      // 1. Insert header simaksi
+      const { data: simaksiRow, error: simaksiErr } = await supabase
+        .from('simaksi')
+        .insert({
+          ketua_user_id: ketuaUUID,
+          gunung_id: data.gunungId || 1,
+          tanggal_naik: data.tanggalNaik,
+          tanggal_turun: data.tanggalTurun,
+          total_anggota: 1 + (data.members?.length || 0),
+          status: 'pending',
+        })
+        .select('id')
+        .single();
+
+      if (simaksiErr || !simaksiRow) {
+        console.warn('[SIMAKSI] Gagal insert header simaksi:', simaksiErr);
+        return false;
+      }
+
+      const simaksiId = simaksiRow.id;
+      console.log('[SIMAKSI] Header tersimpan dengan id:', simaksiId);
+
+      // 2. Insert anggota — cari UUID asli dari tabel users berdasarkan id_pendaki
+      if (data.members?.length > 0) {
+        const memberRows: { simaksi_id: number; user_id: string }[] = [];
+
+        for (const m of data.members as { id: string; name: string }[]) {
+          let resolvedUUID: string | null = null;
+
+          if (isValidUUID(m.id)) {
+            // Sudah UUID — verifikasi ada di tabel users
+            const { data: exists } = await supabase
+              .from('users')
+              .select('id')
+              .eq('id', m.id)
+              .maybeSingle();
+            if (exists) resolvedUUID = m.id;
+          } else {
+            // Display ID (id_pendaki) — lookup ke Supabase
+            const { data: userRow } = await supabase
+              .from('users')
+              .select('id')
+              .eq('id_pendaki', m.id)
+              .maybeSingle();
+            if (userRow) resolvedUUID = userRow.id;
+          }
+
+          if (resolvedUUID) {
+            memberRows.push({ simaksi_id: simaksiId, user_id: resolvedUUID });
+          } else {
+            console.warn(`[SIMAKSI] Anggota "${m.id}" tidak ditemukan di tabel users — dilewati`);
+          }
+        }
+
+        if (memberRows.length > 0) {
+          const { error: memberErr } = await supabase
+            .from('simaksi_anggota')
+            .insert(memberRows);
+          if (memberErr) console.warn('[SIMAKSI] Gagal insert anggota:', memberErr);
+        }
+      }
+
+      // 4. Tandai sebagai synced di IndexedDB
+      const db = await initDB();
+      const tx = db.transaction(SIMAKSI_STORE, 'readwrite');
+      const store = tx.objectStore(SIMAKSI_STORE);
+      const saved = await store.get(data.id);
+      if (saved) {
+        saved.synced = true;
+        saved.simaksiId = simaksiId;
+        await store.put(saved);
+      }
+      await tx.done;
+
+      console.log('[SIMAKSI] Sync berhasil untuk simaksi_id:', simaksiId);
+      return true;
+    } catch (err) {
+      console.warn('[SIMAKSI] Sync gagal:', err);
+      return false;
+    }
+  }
+
+  export async function getUserActiveSimaksi(userId: string): Promise<{
+    simaksiId: number;
+    status: 'draft' | 'pending' | 'approved';
+    ketuaName: string;
+    ketuaUserId: string;
+    tanggalNaik: string;
+    tanggalTurun: string;
+    isKetua: boolean;
+  } | null> {
+    const ACTIVE_STATUSES = ['draft', 'pending', 'approved'];
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      // Cek sebagai ketua
+      const { data: asKetua } = await supabase
+        .from('simaksi')
+        .select('id, status, ketua_user_id, tanggal_naik, tanggal_turun')
+        .eq('ketua_user_id', userId)
+        .in('status', ACTIVE_STATUSES)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (asKetua) {
+        const { data: ketuaUser } = await supabase.from('users').select('name').eq('id', asKetua.ketua_user_id).maybeSingle();
+        return {
+          simaksiId: asKetua.id,
+          status: asKetua.status,
+          ketuaName: ketuaUser?.name || 'Ketua',
+          ketuaUserId: asKetua.ketua_user_id,
+          tanggalNaik: asKetua.tanggal_naik,
+          tanggalTurun: asKetua.tanggal_turun,
+          isKetua: true,
+        };
+      }
+
+      // Cek sebagai anggota
+      const { data: asAnggota } = await supabase
+        .from('simaksi_anggota')
+        .select('simaksi_id, simaksi!inner(id, status, ketua_user_id, tanggal_naik, tanggal_turun)')
+        .eq('user_id', userId)
+        .in('simaksi.status', ACTIVE_STATUSES)
+        .limit(1)
+        .maybeSingle();
+
+      if (asAnggota && asAnggota.simaksi) {
+        const s = asAnggota.simaksi as any;
+        const { data: ketuaUser } = await supabase.from('users').select('name').eq('id', s.ketua_user_id).maybeSingle();
+        return {
+          simaksiId: s.id,
+          status: s.status,
+          ketuaName: ketuaUser?.name || 'Ketua',
+          ketuaUserId: s.ketua_user_id,
+          tanggalNaik: s.tanggal_naik,
+          tanggalTurun: s.tanggal_turun,
+          isKetua: false,
+        };
+      }
+
+      return null;
+    }
+
+    // Offline: cek IndexedDB
+    const db = await initDB();
+    const all = await db.getAll(SIMAKSI_STORE) as any[];
+    const found = all.find(s =>
+      ACTIVE_STATUSES.includes(s.status) &&
+      (s.ketuaUserId === userId || (s.members || []).some((m: any) => m.id === userId))
+    );
+    if (!found) return null;
+    return {
+      simaksiId: found.simaksiId || found.id,
+      status: found.status,
+      ketuaName: found.ketuaName || 'Ketua',
+      ketuaUserId: found.ketuaUserId,
+      tanggalNaik: found.tanggalNaik,
+      tanggalTurun: found.tanggalTurun,
+      isKetua: found.ketuaUserId === userId,
+    };
+  }
+
+  export async function getActiveSimaksiCount(): Promise<number> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      const { data, error } = await supabase
+        .from('simaksi')
+        .select('total_anggota')
+        .eq('status', 'approved');
+      if (!error && data) {
+        return data.reduce((sum: number, row: any) => sum + (row.total_anggota || 0), 0);
+      }
+    }
+
+    const db = await initDB();
+    const all = await db.getAll(SIMAKSI_STORE) as any[];
+    return all
+      .filter(s => s.status === 'approved')
+      .reduce((sum, s) => sum + (s.totalAnggota || 1 + (s.members?.length || 0)), 0);
+  }
+
+  export async function getPendingSimaksi(): Promise<any[]> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      const { data: list, error } = await supabase
+        .from('simaksi')
+        .select('id, ketua_user_id, tanggal_naik, tanggal_turun, total_anggota, status, created_at')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('[SIMAKSI-ADMIN] Gagal fetch pending:', JSON.stringify(error));
+        // Fallthrough ke offline
+      } else if (list && list.length > 0) {
+        const userIds = [...new Set(list.map((s: any) => s.ketua_user_id))];
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, name, id_pendaki')
+          .in('id', userIds);
+
+        const usersMap: Record<string, any> = {};
+        (usersData || []).forEach((u: any) => { usersMap[u.id] = u; });
+
+        return list.map((s: any) => ({
+          simaksiId: s.id,
+          ketuaName: usersMap[s.ketua_user_id]?.name || 'Unknown',
+          idPendaki: usersMap[s.ketua_user_id]?.id_pendaki || '',
+          tanggalNaik: s.tanggal_naik,
+          tanggalTurun: s.tanggal_turun,
+          totalAnggota: s.total_anggota,
+          status: s.status,
+          createdAt: s.created_at,
+          source: 'supabase' as const,
+        }));
+      } else {
+        return [];
+      }
+    }
+
+    // Offline: dari IndexedDB
+    const db = await initDB();
+    const all = await db.getAll(SIMAKSI_STORE);
+    return (all as any[])
+      .filter(s => s.status === 'pending')
+      .map(s => ({
+        simaksiId: s.simaksiId || s.id,
+        localId: s.id,
+        ketuaName: s.ketuaName || 'Unknown',
+        tanggalNaik: s.tanggalNaik,
+        tanggalTurun: s.tanggalTurun,
+        totalAnggota: 1 + (s.members?.length || 0),
+        status: s.status,
+        createdAt: s.createdAt,
+        source: 'local' as const,
+      }));
+  }
+
+  export async function approveSimaksi(simaksiId: number, localId?: number): Promise<boolean> {
+    const supabase = getSupabaseClient();
+    let ok = false;
+
+    if (supabase && isOnline()) {
+      const { error } = await supabase
+        .from('simaksi')
+        .update({ status: 'approved' })
+        .eq('id', simaksiId);
+      if (error) console.warn('[SIMAKSI-ADMIN] Gagal approve:', JSON.stringify(error));
+      else ok = true;
+    }
+
+    // Sinkronkan ke IndexedDB juga
+    const targetLocalId = localId ?? simaksiId;
+    try {
+      const db = await initDB();
+      const tx = db.transaction(SIMAKSI_STORE, 'readwrite');
+      const store = tx.objectStore(SIMAKSI_STORE);
+      const item = await store.get(targetLocalId);
+      if (item) {
+        item.status = 'approved';
+        item.synced = ok;
+        await store.put(item);
+      }
+      await tx.done;
+    } catch (_) {}
+
+    return ok;
+  }
+
+  export async function rejectSimaksi(simaksiId: number, localId?: number): Promise<boolean> {
+    const supabase = getSupabaseClient();
+    let ok = false;
+
+    if (supabase && isOnline()) {
+      const { error } = await supabase
+        .from('simaksi')
+        .update({ status: 'rejected' })
+        .eq('id', simaksiId);
+      if (error) console.warn('[SIMAKSI-ADMIN] Gagal reject:', JSON.stringify(error));
+      else ok = true;
+    }
+
+    const targetLocalId = localId ?? simaksiId;
+    try {
+      const db = await initDB();
+      const tx = db.transaction(SIMAKSI_STORE, 'readwrite');
+      const store = tx.objectStore(SIMAKSI_STORE);
+      const item = await store.get(targetLocalId);
+      if (item) {
+        item.status = 'rejected';
+        item.synced = ok;
+        await store.put(item);
+      }
+      await tx.done;
+    } catch (_) {}
+
+    return ok;
+  }
+
+  export async function saveSimaksi(data: Omit<SimaksiRequest, 'id'>): Promise<number> {
+    const db = await initDB();
+    const localId = await db.add(SIMAKSI_STORE, { ...data, synced: false });
+    console.log('[SIMAKSI] Tersimpan lokal dengan id:', localId);
+
+    const dataWithId = { ...data, id: localId, synced: false };
+    const syncResult = await trySyncSimaksi(dataWithId);
+    console.log('[SIMAKSI] Hasil sync:', syncResult ? '✅ Berhasil' : '⏸️ Offline/Gagal');
+    return localId as number;
+  }
+
+  export async function getAllSimaksi() {
+    const db = await initDB();
+    return db.getAll(SIMAKSI_STORE);
   }
 
   // Autostart sync listeners on runtime environments

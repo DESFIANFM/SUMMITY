@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getAllScans, getAllRegistrations } from '../../lib/db';
+import { getAllScans, getAllRegistrations, getUserActiveSimaksi } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog, RegistrationRequest } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -34,6 +34,7 @@ export default function UserDashboard() {
   const [hikerData, setHikerData] = useState<{ ascent: number, descent: number }>({ ascent: 0, descent: 0 });
   const [activeTicket, setActiveTicket] = useState<RegistrationRequest | null>(null);
   const [showSimaksiForm, setShowSimaksiForm] = useState(false);
+  const [userActiveSimaksi, setUserActiveSimaksi] = useState<Awaited<ReturnType<typeof getUserActiveSimaksi>>>(null);
   
   useEffect(() => {
     const fetchData = async () => {
@@ -83,6 +84,11 @@ export default function UserDashboard() {
       
       setHikerData({ ascent, descent });
       setTotalActive(ascent + descent);
+
+      if (user?.id) {
+        const activeSimaksi = await getUserActiveSimaksi(user.id);
+        setUserActiveSimaksi(activeSimaksi);
+      }
     };
     fetchData();
     const interval = setInterval(fetchData, 5000);
@@ -113,7 +119,7 @@ export default function UserDashboard() {
     { title: "Dilarang Membuat Api Unggun", desc: "Gunakan kompor portable" }
   ];
 
-  if (showSimaksiForm) {
+  if (showSimaksiForm && !userActiveSimaksi) {
     return (
       <div className="space-y-6 pb-20 animate-in fade-in duration-300">
         {/* Back Navigation Bar */}
@@ -193,25 +199,59 @@ export default function UserDashboard() {
         </div>
       </div>
 
-      {/* Registrasi SIMAKSI Page Trigger Button */}
+      {/* Registrasi SIMAKSI / Status Banner */}
       <div className="space-y-4">
-        <button 
-          onClick={() => setShowSimaksiForm(true)}
-          className="w-full bg-emerald-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center justify-between group shadow-xl shadow-emerald-100 transition-all hover:bg-emerald-700 active:scale-[0.98]"
-        >
-          <div className="text-left flex items-center gap-3.5">
-            <div className="bg-white/20 p-2.5 rounded-2xl">
-              <Mountain className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+        {userActiveSimaksi ? (
+          userActiveSimaksi.status === 'approved' ? (
+            <div className="w-full bg-blue-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center gap-4 shadow-xl shadow-blue-100">
+              <div className="bg-white/20 p-2.5 rounded-2xl shrink-0">
+                <Mountain className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+              </div>
+              <div className="text-left flex-1">
+                <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Sedang Dalam Perjalanan</h3>
+                <p className="text-[9px] sm:text-[10px] font-bold text-blue-100 uppercase tracking-widest opacity-90">
+                  Ketua rombongan: {userActiveSimaksi.ketuaName}
+                </p>
+                <p className="text-[8px] font-bold text-blue-200 uppercase tracking-widest opacity-70 mt-0.5">
+                  {formatDateRange(userActiveSimaksi.tanggalNaik, userActiveSimaksi.tanggalTurun)}
+                </p>
+              </div>
             </div>
-            <div className="text-left">
-              <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Registrasi SIMAKSI</h3>
-              <p className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-widest opacity-70">Pendaftaran Pendakian Baru & Kelompok</p>
+          ) : (
+            <div className="w-full bg-amber-500 p-5 sm:p-6 rounded-[2rem] text-white flex items-center gap-4 shadow-xl shadow-amber-100">
+              <div className="bg-white/20 p-2.5 rounded-2xl shrink-0">
+                <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+              </div>
+              <div className="text-left flex-1">
+                <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">SIMAKSI Dalam Proses</h3>
+                <p className="text-[9px] sm:text-[10px] font-bold text-amber-100 uppercase tracking-widest opacity-90">
+                  Menunggu persetujuan admin
+                </p>
+                <p className="text-[8px] font-bold text-amber-200 uppercase tracking-widest opacity-70 mt-0.5">
+                  {formatDateRange(userActiveSimaksi.tanggalNaik, userActiveSimaksi.tanggalTurun)}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:translate-x-2 transition-transform">
-            <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-          </div>
-        </button>
+          )
+        ) : (
+          <button
+            onClick={() => setShowSimaksiForm(true)}
+            className="w-full bg-emerald-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center justify-between group shadow-xl shadow-emerald-100 transition-all hover:bg-emerald-700 active:scale-[0.98]"
+          >
+            <div className="text-left flex items-center gap-3.5">
+              <div className="bg-white/20 p-2.5 rounded-2xl">
+                <Mountain className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+              </div>
+              <div className="text-left">
+                <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Registrasi SIMAKSI</h3>
+                <p className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-widest opacity-70">Pendaftaran Pendakian Baru & Kelompok</p>
+              </div>
+            </div>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:translate-x-2 transition-transform">
+              <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Action CTA - Tiket Saya */}
