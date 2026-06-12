@@ -1174,35 +1174,38 @@
     return ok;
   }
 
-  export async function completeSimaksi(simaksiId: number): Promise<boolean> {
+  export async function completeSimaksi(simaksiId: number): Promise<{ ok: boolean; kodeSimaksi: string | null }> {
     const supabase = getSupabaseClient();
     let ok = false;
+    let kodeSimaksi: string | null = null;
 
     if (supabase && isOnline()) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('simaksi')
-        .update({ status: 'selesai' })
-        .eq('id', simaksiId);
+        .update({ status: 'complete' })
+        .eq('id', simaksiId)
+        .select('kode_simaksi')
+        .maybeSingle();
       if (error) console.warn('[SIMAKSI] Gagal complete:', JSON.stringify(error));
-      else ok = true;
+      else { ok = true; kodeSimaksi = data?.kode_simaksi ?? null; }
     }
 
     try {
       const db = await initDB();
       const tx = db.transaction(SIMAKSI_STORE, 'readwrite');
       const store = tx.objectStore(SIMAKSI_STORE);
-      // cari by simaksiId field atau primary key
       const all = await store.getAll();
       const item = all.find((s: any) => s.simaksiId === simaksiId || s.id === simaksiId);
       if (item) {
-        item.status = 'selesai';
+        item.status = 'complete';
         item.synced = ok;
         await store.put(item);
+        if (!kodeSimaksi) kodeSimaksi = item.kodeSimaksi ?? null;
       }
       await tx.done;
     } catch (_) {}
 
-    return ok;
+    return { ok, kodeSimaksi };
   }
 
   export async function saveSimaksi(data: Omit<SimaksiRequest, 'id'>): Promise<number> {

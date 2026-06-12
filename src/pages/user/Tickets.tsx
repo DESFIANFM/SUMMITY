@@ -28,7 +28,7 @@ export default function UserTickets() {
   const activeSimaksi = simaksiList.find(s => ['approved', 'checkin', 'checkout'].includes(s.status))
     || simaksiList.find(s => s.status === 'pending')
     || simaksiList.find(s => s.status === 'rejected')
-    || simaksiList.find(s => s.status === 'selesai');
+    || simaksiList.find(s => s.status === 'complete');
 
   const otherSimaksi = simaksiList.filter(s => s.simaksiId !== activeSimaksi?.simaksiId);
 
@@ -38,7 +38,7 @@ export default function UserTickets() {
     rejected: 'DITOLAK',
     checkin: 'SEDANG MENDAKI',
     checkout: 'DALAM PERJALANAN TURUN',
-    selesai: 'SELESAI',
+    complete: 'SELESAI',
   };
 
   const statusColor: Record<string, string> = {
@@ -47,7 +47,7 @@ export default function UserTickets() {
     rejected: 'bg-rose-100 text-rose-700',
     checkin: 'bg-blue-100 text-blue-700',
     checkout: 'bg-sky-100 text-sky-700',
-    selesai: 'bg-slate-100 text-slate-600',
+    complete: 'bg-slate-100 text-slate-600',
   };
 
   if (loading) return (
@@ -68,7 +68,7 @@ export default function UserTickets() {
             <div className={`p-3 rounded-2xl ${statusColor[s.status] || 'bg-slate-100 text-slate-400'}`}>
               {s.status === 'pending' ? <Clock className="w-5 h-5 animate-pulse" />
                 : s.status === 'approved' || s.status === 'checkin' ? <QrCode className="w-5 h-5" />
-                : s.status === 'selesai' ? <CheckCircle2 className="w-5 h-5" />
+                : s.status === 'complete' ? <CheckCircle2 className="w-5 h-5" />
                 : <AlertCircle className="w-5 h-5" />}
             </div>
             <div>
@@ -128,7 +128,7 @@ export default function UserTickets() {
         </div>
       )}
 
-      {/* Tiket aktif (approved / checkin / checkout / selesai) */}
+      {/* Tiket aktif (approved / checkin / checkout / complete) */}
       {activeSimaksi && activeSimaksi.status !== 'pending' && activeSimaksi.status !== 'rejected' && (
         <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-300">
           {/* Header */}
@@ -179,13 +179,15 @@ export default function UserTickets() {
                   <Camera className="w-5 h-5" />
                   PINDAI POS
                 </button>
-                <button
-                  onClick={() => setShowKepulangan(true)}
-                  className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black py-3 sm:py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] text-xs sm:text-sm"
-                >
-                  <LogOut className="w-5 h-5" />
-                  LAPOR KEPULANGAN
-                </button>
+                {activeSimaksi.isKetua && (
+                  <button
+                    onClick={() => setShowKepulangan(true)}
+                    className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black py-3 sm:py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] text-xs sm:text-sm"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    LAPOR KEPULANGAN
+                  </button>
+                )}
               </div>
             )}
 

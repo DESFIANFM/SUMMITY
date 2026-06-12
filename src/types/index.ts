@@ -54,7 +54,7 @@ export interface RegistrationRequest {
   checkedGears?: string[];
 }
 
-export type SimaksiStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'checkin' | 'checkout' | 'selesai';
+export type SimaksiStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'checkin' | 'checkout' | 'complete';
 
 export interface SimaksiRequest {
   id?: number;
