@@ -89,7 +89,7 @@ export default function UserTickets() {
           <div className="flex gap-2">
             {reg.status === 'REJECTED' && (
               <button 
-                onClick={() => navigate('/register')}
+                onClick={() => setSearchParams({ view: 'simaksi' })}
                 className="bg-slate-900 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase tracking-widest"
               >
                 Daftar Lagi
@@ -126,7 +126,7 @@ export default function UserTickets() {
           </div>
           <p className="text-slate-400 font-bold mb-6 italic">Belum ada SIMAKSI</p>
           <button 
-            onClick={() => navigate('/register')}
+            onClick={() => setSearchParams({ view: 'simaksi' })}
             className="bg-slate-900 text-white font-black px-6 py-4 rounded-2xl text-xs uppercase tracking-widest"
           >
             Mulai Registrasi

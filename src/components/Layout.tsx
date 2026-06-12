@@ -26,9 +26,10 @@ import { getSupabaseClient, syncAllUnsyncedData } from '../lib/db';
 import UserTickets from '../pages/user/Tickets';
 import UserTracking from '../pages/user/Tracking';
 import UserScanner from '../pages/user/Scanner';
+import SubmitSimaksi from '../pages/user/SimaksiSubmit';
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const {user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,6 +40,8 @@ export default function Layout() {
   const hasSupabase = !!getSupabaseClient();
   
   const activeView = searchParams.get('view');
+  const _u = user as any;
+  const userId = (_u?.id_pendaki || _u?.idPendaki || _u?.displayId || _u?.id || '').toString().toUpperCase();
 
   const handleLogout = () => {
     logout();
@@ -184,12 +187,14 @@ export default function Layout() {
                     {activeView === 'scan' && <QrCode className="w-5 h-5 text-emerald-600" />}
                     {activeView === 'tracking' && <Compass className="w-5 h-5 text-emerald-600" />}
                     {activeView === 'account' && <User className="w-5 h-5 text-emerald-600" />}
+                    {activeView === 'simaksi' && <Mountain className="w-5 h-5 text-emerald-600" />}
                   </div>
                   <h3 className="font-black italic uppercase tracking-tight text-slate-800 text-sm sm:text-base">
                     {activeView === 'tickets' && 'TIKET & STATUS'}
                     {activeView === 'scan' && 'SCAN QR JALUR'}
                     {activeView === 'tracking' && 'TRACKING MONITOR'}
                     {activeView === 'account' && 'PROFIL SAYA'}
+                    {activeView === 'simaksi' && 'DAFTAR SIMAKSI'}
                   </h3>
                 </div>
                 <button 
@@ -206,6 +211,7 @@ export default function Layout() {
                    {activeView === 'tickets' && <UserTickets />}
                    {activeView === 'scan' && <UserScanner />}
                    {activeView === 'tracking' && <UserTracking />}
+                   {activeView === 'simaksi' && <SubmitSimaksi />}
                    {activeView === 'account' && (
                      <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="bg-emerald-700 p-8 sm:p-10 rounded-[2.5rem] text-white text-center relative overflow-hidden shadow-xl shadow-emerald-100">
@@ -231,18 +237,18 @@ export default function Layout() {
                            </div>
                            <button 
                               onClick={() => {
-                                 navigator.clipboard.writeText(user.id);
+                                 navigator.clipboard.writeText(userId);
                                  setCopiedId(true);
                                  setTimeout(() => setCopiedId(false), 2500);
                               }}
                               className="bg-slate-50 hover:bg-slate-100 p-4 rounded-[2rem] border border-slate-100 shadow-sm text-left transition-all relative group flex flex-col justify-between w-full focus:outline-none"
                            >
                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                                 {copiedId ? 'Disalin!' : 'ID Pengguna (Klik Salin)'}
+                                 {copiedId ? 'Disalin!' : 'ID Pendaki'}
                               </span>
                               <div className="flex items-center justify-between w-full">
                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${copiedId ? 'text-emerald-600 font-extrabold' : 'text-slate-800'}`}>
-                                    #{user.id.toUpperCase()}
+                                    #{userId}
                                  </span>
                                  {copiedId ? (
                                     <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />

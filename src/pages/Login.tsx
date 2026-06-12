@@ -83,8 +83,14 @@ export default function Login() {
           const supabaseUser = users[0];
           
           // Map snake_case from DB to camelCase for frontend
+          const now = new Date();
+          const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+          const displayId = supabaseUser.id_pendaki || `${dateStr}0001`;
           const userData = {
             id: supabaseUser.id,
+            displayId,
+            idPendaki: displayId,
+            id_pendaki: displayId,
             name: supabaseUser.name,
             email: supabaseUser.email,
             username: supabaseUser.username,

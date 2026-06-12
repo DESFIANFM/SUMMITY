@@ -46,14 +46,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Normalize id: ensure we have a UUID-like internal id. Preserve legacy displayId if provided.
     const providedId = customData?.id || savedIdentity?.id;
     let normalizedId = providedId;
-    let displayId = (customData as any)?.displayId || (savedIdentity as any)?.displayId;
+    let displayId = (customData as any)?.idPendaki || (customData as any)?.id_pendaki || (customData as any)?.displayId || (savedIdentity as any)?.idPendaki || (savedIdentity as any)?.displayId;
 
     // If provided id looks like legacy USER-XXXX, treat it as displayId and generate internal UUID.
     if (providedId && /^USER-/.test(providedId)) {
       displayId = providedId;
       normalizedId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
         ? (crypto as any).randomUUID()
-        : `generated-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
     }
 
     const newUser: User = {
