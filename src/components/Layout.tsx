@@ -29,7 +29,7 @@ import UserScanner from '../pages/user/Scanner';
 import SubmitSimaksi from '../pages/user/SimaksiSubmit';
 
 export default function Layout() {
-  const {user, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,8 +40,6 @@ export default function Layout() {
   const hasSupabase = !!getSupabaseClient();
   
   const activeView = searchParams.get('view');
-  const _u = user as any;
-  const userId = (_u?.id_pendaki || _u?.idPendaki || _u?.displayId || _u?.id || '').toString().toUpperCase();
 
   const handleLogout = () => {
     logout();
@@ -237,7 +235,7 @@ export default function Layout() {
                            </div>
                            <button 
                               onClick={() => {
-                                 navigator.clipboard.writeText(userId);
+                                 navigator.clipboard.writeText((user.id_pendaki || user.idPendaki || user.displayId || user.id).toUpperCase());
                                  setCopiedId(true);
                                  setTimeout(() => setCopiedId(false), 2500);
                               }}
@@ -248,7 +246,7 @@ export default function Layout() {
                               </span>
                               <div className="flex items-center justify-between w-full">
                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${copiedId ? 'text-emerald-600 font-extrabold' : 'text-slate-800'}`}>
-                                    #{userId}
+                                    #{(user.id_pendaki || user.idPendaki || user.displayId || user.id).toUpperCase()}
                                  </span>
                                  {copiedId ? (
                                     <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />

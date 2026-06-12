@@ -63,6 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const newUser: User = {
       id: normalizedId || (role === 'ADMIN' ? 'admin-1' : 'user-1'),
       displayId,
+      idPendaki: displayId,
+      id_pendaki: displayId,
       name: customData?.name || savedIdentity?.name || (role === 'ADMIN' ? 'Petugas Lapangan' : 'Pendaki'),
       email: customData?.email || savedIdentity?.email || (role === 'ADMIN' ? 'admin@summity.com' : 'pendaki@summity.com'),
       role,
