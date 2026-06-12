@@ -209,9 +209,17 @@ export default function Register() {
       return;
     }
 
-    const newUserId = `USER-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    // Generate a proper UUID for internal user id to satisfy backend uuid columns.
+    // Keep a legacy displayId for UI if needed.
+    const internalId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : `generated-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const displayId = `USER-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
     const newClimberAccount = {
-      id: newUserId,
+      id: internalId,
+      displayId,
       role: 'USER' as const,
       name: formData.name,
       email: formData.email,
@@ -236,8 +244,46 @@ export default function Register() {
     usersList.push(newClimberAccount);
     localStorage.setItem('summity_users_list', JSON.stringify(usersList));
 
+    // Also persist the newly created user as the active stored identity so
+    // other code paths (and the sync engine) can read `summity_user` right
+    // after registration completes.
+    try {
+      localStorage.setItem('summity_user', JSON.stringify(newClimberAccount));
+    } catch (e) {
+      console.error('Failed to persist summity_user to localStorage', e);
+    }
+
     // Log the user in with their personal dashboard details
-    login('USER', newClimberAccount);
+  // Persist and login using internal UUID id
+  login('USER', newClimberAccount);
+
+    // Save user account to local IndexedDB and sync to Supabase `users` table
+    // when the "Daftar Selesai" button is clicked
+    (async () => {
+      try {
+        console.log('🟡 Saving account to IndexedDB and syncing to Supabase...');
+        await saveRegistration({
+          userId: internalId,
+          name: formData.name,
+          nik: formData.nik,
+          phone: formData.phone,
+          emergencyPhone: formData.emergencyPhone,
+          birthDate: '1995-01-01', // placeholder, not collected in account form
+          address: formData.address,
+          gender: formData.gender,
+          mountain: '', // will be set during climb registration
+          date: '', // will be set during climb registration
+          endDate: '', // will be set during climb registration
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          // Pass additional fields via casting to allow them through
+          ...(newClimberAccount as any),
+        });
+        console.log('✅ Account saved and sync initiated!');
+      } catch (err) {
+        console.warn('⚠️ Account sync failed (will retry when online):', err);
+      }
+    })();
 
     setSubmitted(true);
   };
@@ -266,7 +312,7 @@ export default function Register() {
       let foundUser = null;
       if (usersListStr) {
         const usersList = JSON.parse(usersListStr);
-        foundUser = usersList.find((u: any) => u.id?.toUpperCase() === inputId);
+  foundUser = usersList.find((u: any) => (u.id?.toUpperCase() === inputId) || (u.displayId?.toUpperCase() === inputId));
       }
       
       if (foundUser) {
@@ -368,7 +414,8 @@ export default function Register() {
   // SUCCESS PAGE: ACCOUNT CREATED
   if (submitted) {
     const activeUser = user || {
-      id: 'USER-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+      id: `temp-${Math.random().toString(36).substr(2, 8)}`,
+      displayId: 'USER-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
       name: formData.name,
       email: formData.email,
       username: formData.username,
@@ -388,7 +435,9 @@ export default function Register() {
     };
 
     const handleCopyId = () => {
-      navigator.clipboard.writeText(activeUser.id);
+      // Prefer displayId for copying if present
+      const idToCopy = (activeUser as any).displayId || activeUser.id;
+      navigator.clipboard.writeText(idToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     };
