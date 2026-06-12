@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+const APP_VERSION = '1.0.0';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getSupabaseClient } from '../lib/db';
@@ -418,9 +419,10 @@ export default function Login() {
         </AnimatePresence>
       </div>
 
-      <p className="relative z-10 mt-16 text-[10px] uppercase tracking-[0.5em] font-black opacity-30">
-        © 2026 Summity Project
-      </p>
+      <div className="relative z-10 mt-16 flex flex-col items-center gap-1">
+        <p className="text-[9px] uppercase tracking-[0.4em] font-black opacity-20">V{APP_VERSION}</p>
+        <p className="text-[10px] uppercase tracking-[0.5em] font-black opacity-30">© 2026 Summity Project</p>
+      </div>
     </div>
   );
 }

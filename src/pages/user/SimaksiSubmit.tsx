@@ -1,24 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { saveRegistration } from '../../lib/db';
-import { 
-  Mountain, 
-  Calendar, 
-  User, 
-  ArrowRight, 
-  Phone, 
-  Compass, 
-  AlertCircle, 
-  Sparkles, 
-  Ticket, 
-  Info, 
-  ShieldCheck, 
-  Plus, 
-  Trash2, 
-  Users, 
-  CheckSquare, 
-  Square 
+import { saveSimaksi, getSupabaseClient } from '../../lib/db';
+import {
+  Mountain,
+  Calendar,
+  ArrowRight,
+  Compass,
+  AlertCircle,
+  Ticket,
+  ShieldCheck,
+  Plus,
+  Trash2,
+  Users,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -33,49 +29,44 @@ export default function SubmitSimaksi() {
   const [memberError, setMemberError] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  const [checkedGears, setCheckedGears] = useState<Record<string, boolean>>({
-    tenda: false,
-    kompor: false,
-    nesting: false,
-    p3k: false,
-    trash_bag: false,
-    sleeping_bag: false,
-    matras: false,
-    jaket: false,
-    jas_hujan: false,
-    air: false,
-    senter: false,
-  });
-
   const MANDATORY_ITEMS = [
-    { id: 'tenda', label: 'Tenda Dome (min. 1 tenda kapasitas sesuai anggota)', category: 'Kelompok' },
-    { id: 'kompor', label: 'Kompor Portable & Gas Cadangan', category: 'Kelompok' },
-    { id: 'nesting', label: 'Peralatan Memasak / Nesting', category: 'Kelompok' },
-    { id: 'p3k', label: 'Kotak P3K & Obat Darurat Kelompok', category: 'Kelompok' },
-    { id: 'trash_bag', label: 'Kantong Sampah / Trash Bag (Wajib bawa turun kembali)', category: 'Kelompok' },
-    { id: 'sleeping_bag', label: 'Sleeping Bag (1 buah per pendaki)', category: 'Pribadi' },
-    { id: 'matras', label: 'Matras Alas Tidur (1 buah per pendaki)', category: 'Pribadi' },
-    { id: 'jaket', label: 'Jaket Gunung Tebal (1 buah per pendaki)', category: 'Pribadi' },
-    { id: 'jas_hujan', label: 'Jas Hujan / Windshield (1 buah per pendaki)', category: 'Pribadi' },
-    { id: 'air', label: 'Air Konsumsi Bersih (Minimum 3 Liter)', category: 'Pribadi' },
-    { id: 'senter', label: 'Headlamp / Senter & Baterai Cadangan', category: 'Pribadi' }
+    { id: 'TENDA_DOME', label: 'Tenda Dome (Sesuai Kapasitas)', category: 'Kelompok' },
+    { id: 'KOMPOR_PORTABLE', label: 'Kompor Portable', category: 'Kelompok' },
+    { id: 'NESTING', label: 'Nesting / Wadah Memasak', category: 'Kelompok' },
+    { id: 'P3K', label: 'P3K & Obat-obatan', category: 'Kelompok' },
+    { id: 'TRASH_BAG', label: 'Kantong Sampah / Trash Bag', category: 'Kelompok' },
+    { id: 'HEADLAMP', label: 'Headlamp', category: 'Pribadi' },
+    { id: 'JAKET_GUNUNG', label: 'Jaket Gunung', category: 'Pribadi' },
+    { id: 'SEPATU_HIKING', label: 'Sepatu Hiking', category: 'Pribadi' },
+    { id: 'SLEEPING_BAG', label: 'Sleeping Bag', category: 'Pribadi' },
+    { id: 'RAINCOAT', label: 'Jas Hujan', category: 'Pribadi' },
   ];
 
+  const [checkedGears, setCheckedGears] = useState<Record<string, boolean>>(
+    Object.fromEntries(MANDATORY_ITEMS.map(item => [item.id, false]))
+  );
+
   const [climbData, setClimbData] = useState({
-    mountain: 'Gn. Slamet',
     date: '',
     endDate: '',
   });
 
-  const handleAddMember = () => {
+  const checkedCount = Object.values(checkedGears).filter(Boolean).length;
+  const allGearChecked = checkedCount === MANDATORY_ITEMS.length;
+  const canSubmit = !isLeader || allGearChecked;
+
+  const handleAddMember = async () => {
     setMemberError('');
     const inputId = memberIdInput.trim().toUpperCase();
     if (!inputId) {
       setMemberError('Silakan masukkan ID Anggota yang valid');
       return;
     }
-    
-    if (user && (inputId === user.id.toUpperCase() || (user.displayId && inputId === user.displayId.toUpperCase()))) {
+
+    const selfIds = [user?.id, (user as any)?.displayId, (user as any)?.id_pendaki, (user as any)?.idPendaki]
+      .filter(Boolean)
+      .map((v: any) => String(v).toUpperCase());
+    if (selfIds.includes(inputId)) {
       setMemberError('Anda tidak bisa menambahkan ID Anda sendiri sebagai anggota kelompok');
       return;
     }
@@ -85,29 +76,47 @@ export default function SubmitSimaksi() {
       return;
     }
 
-    // Lookup user in summity_users_list
+    // 1. Cek localStorage — tapi hanya pakai kalau ada nama
+    let resolvedName: string | null = null;
+    let resolvedId: string = inputId;
     try {
       const usersListStr = localStorage.getItem('summity_users_list');
-      let foundUser = null;
       if (usersListStr) {
         const usersList = JSON.parse(usersListStr);
-        foundUser = usersList.find((u: any) => 
-          (u.id?.toUpperCase() === inputId) || 
-          (u.displayId?.toUpperCase() === inputId)
-        );
+        const found = usersList.find((u: any) => {
+          const ids = [u.id, u.displayId, u.id_pendaki, u.idPendaki]
+            .filter(Boolean)
+            .map((v: any) => String(v).toUpperCase());
+          return ids.includes(inputId);
+        });
+        if (found?.name) {
+          resolvedName = found.name;
+          resolvedId = found.id_pendaki || found.idPendaki || found.displayId || found.id || inputId;
+        }
       }
-      
-      if (foundUser) {
-        setMemberList([...memberList, { id: foundUser.id, name: foundUser.name }]);
-        setMemberIdInput('');
-      } else {
-        // Tolerant additions
-        setMemberList([...memberList, { id: inputId, name: `Pendaki #${inputId.replace('USER-', '')}` }]);
-        setMemberIdInput('');
+    } catch (_) {}
+
+    // 2. Kalau nama tidak ada di localStorage, lookup ke Supabase
+    if (!resolvedName) {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const { data } = await supabase
+          .from('users')
+          .select('id, name, id_pendaki')
+          .eq('id_pendaki', inputId)
+          .maybeSingle();
+        if (data?.name) {
+          resolvedName = data.name;
+          resolvedId = data.id_pendaki || inputId;
+        }
       }
-    } catch (e) {
-      setMemberList([...memberList, { id: inputId, name: `Pendaki #${inputId}` }]);
+    }
+
+    if (resolvedName) {
+      setMemberList([...memberList, { id: resolvedId, name: resolvedName }]);
       setMemberIdInput('');
+    } else {
+      setMemberError(`Pendaki dengan ID "${inputId}" tidak ditemukan.`);
     }
   };
 
@@ -132,36 +141,18 @@ export default function SubmitSimaksi() {
       return;
     }
 
-    if (isLeader) {
-      // Ensure all gears are checked
-      const allChecked = Object.values(checkedGears).every(val => val === true);
-      if (!allChecked) {
-        setFormErrors({ gear: 'Seluruh checklist barang bawaan wajib harus dicentang demi aspek keselamatan kelompok.' });
-        return;
-      }
-    }
-
     if (!user) return;
 
-    await saveRegistration({
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-      nik: user.nik || '',
-      phone: user.phone || '',
-      emergencyPhone: user.emergencyPhone || '',
-      birthDate: '1995-01-01',
-      gender: user.gender || 'Laki-laki',
-      address: `${user.address || ''}, ${user.subdistrict || ''}, ${user.district || ''}, ${user.city || ''}, ${user.province || ''}`,
-      mountain: climbData.mountain,
-      date: climbData.date,
-      endDate: climbData.endDate,
-      status: 'APPROVED',
+    await saveSimaksi({
+      ketuaUserId: user.id,
+      ketuaName: user.name,
+      gunungId: 1,
+      tanggalNaik: climbData.date,
+      tanggalTurun: climbData.endDate,
+      status: 'pending',
       createdAt: new Date().toISOString(),
-      isLeader,
       members: isLeader ? memberList : [],
-      checkedGears: isLeader ? Object.keys(checkedGears).filter(k => checkedGears[k]) : [],
-    } as any);
+    });
 
     setClimbSubmitted(true);
     setTimeout(() => {
@@ -182,13 +173,13 @@ export default function SubmitSimaksi() {
         >
           <Ticket className="w-16 h-16 text-emerald-500 animate-pulse mx-auto" strokeWidth={1.5} />
         </motion.div>
-        <h2 className="text-2xl font-black text-slate-800 mb-2 italic uppercase tracking-tight">SIMAKSI Disetujui!</h2>
+        <h2 className="text-2xl font-black text-slate-800 mb-2 italic uppercase tracking-tight">SIMAKSI Terkirim!</h2>
         <p className="text-slate-400 mb-6 max-w-sm text-[10px] leading-relaxed uppercase tracking-wider font-extrabold text-center">
-          Rencana pendakian Anda disetujui otomatis secara realtime (online ke Supabase & offline ke IndexedDB).
+          Pengajuan SIMAKSI Anda dikirim. Status: <span className="text-amber-600">Menunggu Persetujuan</span> dari petugas.
         </p>
-        <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-[9px] tracking-widest uppercase bg-emerald-50 px-5 py-2.5 rounded-xl border border-emerald-100/50 shadow-sm animate-pulse">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-md"></span>
-          KEMBALI KE BERANDA KABAR...
+        <div className="flex items-center gap-2 text-amber-600 font-extrabold text-[9px] tracking-widest uppercase bg-amber-50 px-5 py-2.5 rounded-xl border border-amber-100/50 shadow-sm animate-pulse">
+          <span className="w-2 h-2 rounded-full bg-amber-500 shadow-md"></span>
+          MENUNGGU VERIFIKASI PETUGAS...
         </div>
       </div>
     );
@@ -454,12 +445,6 @@ export default function SubmitSimaksi() {
                 ))}
               </div>
 
-              {formErrors.gear && (
-                <div className="bg-rose-50 border border-rose-150 p-2.5 rounded-xl flex items-start gap-1.5 text-rose-700">
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
-                  <p className="text-[8.5px] font-black uppercase tracking-wider leading-normal">{formErrors.gear}</p>
-                </div>
-              )}
             </div>
           </motion.div>
         )}
@@ -472,10 +457,17 @@ export default function SubmitSimaksi() {
         <button
           type="button"
           onClick={handleSIMAKSISubmit}
-          className="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.97] text-white font-black px-6 py-4 rounded-xl text-[10.5px] uppercase tracking-[0.15em] flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-200/50 w-full"
+          disabled={!canSubmit}
+          className={`font-black px-6 py-4 rounded-xl text-[10.5px] uppercase tracking-[0.15em] flex items-center justify-center gap-2 transition-all w-full ${
+            canSubmit
+              ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.97] text-white shadow-lg shadow-emerald-200/50'
+              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+          }`}
         >
-          Kirim Rencana SIMAKSI
-          <ArrowRight className="w-4 h-4 text-white" />
+          {canSubmit
+            ? <>Kirim Rencana SIMAKSI <ArrowRight className="w-4 h-4" /></>
+            : `Lengkapi Perlengkapan (${checkedCount}/${MANDATORY_ITEMS.length})`
+          }
         </button>
       </div>
     </div>

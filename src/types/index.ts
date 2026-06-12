@@ -54,6 +54,22 @@ export interface RegistrationRequest {
   checkedGears?: string[];
 }
 
+export type SimaksiStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'checkin' | 'checkout' | 'selesai';
+
+export interface SimaksiRequest {
+  id?: number;
+  ketuaUserId: string;
+  ketuaName?: string;
+  gunungId: number;
+  tanggalNaik: string;
+  tanggalTurun: string;
+  status: SimaksiStatus;
+  createdAt: string;
+  members: { id: string; name: string }[];
+  synced?: boolean;
+  simaksiId?: number;
+}
+
 export interface Ticket {
   id: string;
   userId: string;

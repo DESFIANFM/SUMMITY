@@ -125,9 +125,9 @@ export default function Layout() {
                 syncStatus === 'syncing' ? 'bg-amber-300 animate-ping' : 'bg-emerald-400'
               }`} />
               <span className="text-[8px] font-black uppercase tracking-wider text-emerald-100">
-                {!hasSupabase ? 'Mode Lokal' :
-                 !isOnline ? 'Offline (Lokal)' :
-                 syncStatus === 'syncing' ? 'Menyelaraskan...' : 'Koneksi Supabase'}
+                {!hasSupabase ? 'Offline Mode' :
+                 !isOnline ? 'Offline Mode' :
+                 syncStatus === 'syncing' ? 'Menyelaraskan...' : 'Online Mode'}
               </span>
             </div>
           </div>

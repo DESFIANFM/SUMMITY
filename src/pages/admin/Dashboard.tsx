@@ -1,20 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { getAllScans, getAllRegistrations, updateRegistrationStatus, deleteRegistration } from '../../lib/db';
+import { getAllScans, getPendingSimaksi, getActiveSimaksiCount, approveSimaksi, rejectSimaksi } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
-import { ScanLog, RegistrationRequest } from '../../types';
-import { Users, User, Clock, TrendingUp, Mail, Check, X, Calendar, Trash2, Phone, Fingerprint, MapPin, ChevronRight, Info, Search, Download, Filter, QrCode, Printer } from 'lucide-react';
+import { ScanLog } from '../../types';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronRight, Info, QrCode, Printer } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
 
 export default function AdminDashboard() {
   const [hikerLocations, setHikerLocations] = useState<Record<number, { ascent: number, descent: number }>>({});
   const [recentScans, setRecentScans] = useState<ScanLog[]>([]);
-  const [registrations, setRegistrations] = useState<RegistrationRequest[]>([]);
-  const [selectedReg, setSelectedReg] = useState<RegistrationRequest | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'APPROVED' | 'REJECTED' | 'PENDING'>('ALL');
-  const [hasSearched, setHasSearched] = useState(false);
+  const [pendingSimaksi, setPendingSimaksi] = useState<any[]>([]);
+  const [activeSimaksiCount, setActiveSimaksiCount] = useState(0);
+  const [selectedSimaksi, setSelectedSimaksi] = useState<any | null>(null);
+  const [isLoadingSimaksi, setIsLoadingSimaksi] = useState(false);
   
   // QR Code Simulator page states
   const [activeQrTab, setActiveQrTab] = useState<'pos' | 'ticket'>('pos');
@@ -24,10 +22,19 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       const scans = (await getAllScans()) as ScanLog[];
-      const regs = await getAllRegistrations();
-      
       setRecentScans([...scans].reverse().slice(0, 5));
-      setRegistrations(regs.reverse());
+
+      setIsLoadingSimaksi(true);
+      try {
+        const [pending, activeCount] = await Promise.all([
+          getPendingSimaksi(),
+          getActiveSimaksiCount(),
+        ]);
+        setPendingSimaksi(pending);
+        setActiveSimaksiCount(activeCount);
+      } finally {
+        setIsLoadingSimaksi(false);
+      }
 
       // Calculate where each hiker is based on their latest scan
       const latestScansByTicket: Record<string, { posId: number; type: string; direction: 'ASCENT' | 'DESCENT' }> = {};
@@ -73,108 +80,24 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleUpdateReg = async (id: number, status: 'APPROVED' | 'REJECTED') => {
-    await updateRegistrationStatus(id, status);
-    // Refresh will happen via interval
+  const handleApprove = async (item: any) => {
+    await approveSimaksi(item.simaksiId, item.localId);
+    setPendingSimaksi(prev => prev.filter(s => s.simaksiId !== item.simaksiId));
+    setSelectedSimaksi(null);
   };
 
-  const handleDeleteReg = async (id: number) => {
-    if (confirm('Hapus data registrasi ini?')) {
-      await deleteRegistration(id);
-    }
+  const handleReject = async (item: any) => {
+    await rejectSimaksi(item.simaksiId, item.localId);
+    setPendingSimaksi(prev => prev.filter(s => s.simaksiId !== item.simaksiId));
+    setSelectedSimaksi(null);
   };
 
-  const exportToCSV = () => {
-    const headers = ['ID', 'Nama', 'NIK', 'Gender', 'Gunung', 'Tgl Naik', 'Tgl Turun', 'Status', 'Dibuat'];
-    const rows = registrations.map(r => [
-      r.id,
-      r.name,
-      r.nik,
-      r.gender,
-      r.mountain,
-      r.date,
-      r.endDate,
-      r.status,
-      r.createdAt
-    ]);
-
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `registrasi-summity-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      const query = searchInput.trim().toLowerCase();
-      if (!query) {
-        setSearchQuery('');
-        setHasSearched(false);
-        return;
-      }
-
-      // Cari kecocokan data
-      const matches = registrations.filter(reg => 
-        reg.name.toLowerCase().includes(query) || 
-        reg.nik.includes(query) ||
-        reg.mountain.toLowerCase().includes(query)
-      );
-
-      setSearchQuery(searchInput);
-      setHasSearched(true);
-
-      // Jika ada yang cocok, langsung buka detailnya (pindah ke visualisasi data)
-      if (matches.length > 0) {
-        setSelectedReg(matches[0]);
-      }
-    }
-  };
-
-  const filteredRegistrations = registrations.filter(reg => {
-    const matchesSearch = !searchQuery || 
-                         reg.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         reg.nik.includes(searchQuery) ||
-                         reg.mountain.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterStatus === 'ALL' || reg.status === filterStatus;
-    return matchesSearch && matchesFilter;
-  });
-
-  const pendingRegs = filteredRegistrations.filter(r => r.status === 'PENDING');
-  const historyRegs = filteredRegistrations.filter(r => r.status !== 'PENDING');
-  
   const totalActive = Object.values(hikerLocations).reduce((sum, loc) => sum + loc.ascent + loc.descent, 0);
 
   const getHikerName = (ticketId: string) => {
     if (!ticketId) return 'Pendaki Umum';
-    
-    // Parse ID from ticketId, e.g. "SUMMITY-USER-1" gets id = 1
-    // or "SUMMITY-USER-1-TICK-9942" gets id = 1
-    // Try to extract legacy numeric id or display id
-    const numMatch = ticketId.match(/SUMMITY-USER-(\d+)/);
-    if (numMatch) {
-      const parsedId = numMatch[1];
-      const reg = registrations.find(r => String((r as any).id) === parsedId || (r as any).displayId === `USER-${parsedId}`);
-      if (reg) return reg.name;
-    }
-
-    // Try matching full displayId patterns like SUMMITY-USER-XXXXXX or SUMMITY-USER-<displayId>-TICK-...
-    const displayMatch = ticketId.match(/SUMMITY-USER-([A-Z0-9-]+)/i);
-    if (displayMatch) {
-      const display = `USER-${displayMatch[1]}`;
-  const reg = registrations.find(r => (r as any).displayId === display || String(r.id) === displayMatch[1]);
-      if (reg) return reg.name;
-    }
-    
-    // Check fallback for static/mock demo values
     if (ticketId.includes('9942')) return 'Ahmad Fauzi';
     if (ticketId.includes('8831')) return 'Budi Setiawan';
-    
     return ticketId;
   };
 
@@ -196,7 +119,7 @@ export default function AdminDashboard() {
           <div className="bg-blue-100 w-10 h-10 rounded-2xl flex items-center justify-center mb-4">
             <Users className="w-5 h-5 text-blue-600" />
           </div>
-          <div className="text-3xl font-black text-slate-800 mb-1">{totalActive}</div>
+          <div className="text-3xl font-black text-slate-800 mb-1">{activeSimaksiCount}</div>
           <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Pendaki Aktif</div>
         </div>
 
@@ -204,99 +127,59 @@ export default function AdminDashboard() {
           <div className="bg-white/20 w-10 h-10 rounded-2xl flex items-center justify-center mb-4">
             <Mail className="w-5 h-5 text-white" />
           </div>
-          <div className="text-3xl font-black mb-1">{pendingRegs.length}</div>
-          <div className="text-[10px] text-emerald-100 font-bold uppercase tracking-widest text-white/60">Registrasi Pending</div>
+          <div className="text-3xl font-black mb-1">{pendingSimaksi.length}</div>
+          <div className="text-[10px] text-emerald-100 font-bold uppercase tracking-widest text-white/60">SIMAKSI Pending</div>
         </div>
       </div>
 
-      {/* Search and Filter Section */}
-      <div className="bg-white p-4 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${searchInput !== searchQuery ? 'text-emerald-500' : 'text-slate-400'}`} />
-            <input 
-              type="text"
-              placeholder="Cari Nama, NIK, atau Gunung... (Tekan Enter)"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 pl-11 pr-4 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all uppercase tracking-wider"
-            />
-            {hasSearched && searchQuery && (
-              <button 
-                onClick={() => {
-                  setSearchInput('');
-                  setSearchQuery('');
-                  setHasSearched(false);
-                }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-[8px] font-black text-rose-400 hover:text-rose-600 uppercase tracking-tighter"
-              >
-                Reset
-              </button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-              <select 
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as any)}
-                className="bg-slate-50 border border-slate-100 rounded-2xl py-3 pl-9 pr-8 text-[10px] font-black text-slate-600 focus:outline-none appearance-none uppercase tracking-widest cursor-pointer"
-              >
-                <option value="ALL">SEMUA STATUS</option>
-                <option value="APPROVED">DISETUJUI</option>
-                <option value="REJECTED">DITOLAK</option>
-                <option value="PENDING">PENDING</option>
-              </select>
-            </div>
-            <button 
-              onClick={exportToCSV}
-              className="bg-emerald-50 text-emerald-600 p-3 rounded-2xl flex items-center gap-2 hover:bg-emerald-100 transition-colors group"
-              title="Unduh CSV"
-            >
-              <Download className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Export CSV</span>
-            </button>
-          </div>
+      {/* Permohonan SIMAKSI */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Permohonan SIMAKSI</h3>
+          {isLoadingSimaksi && (
+            <span className="text-[8px] font-black text-emerald-600 uppercase tracking-widest animate-pulse">Memuat...</span>
+          )}
         </div>
-      </div>
 
-      {pendingRegs.length > 0 ? (
-        <div className="space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Permohonan Registrasi</h3>
+        {pendingSimaksi.length > 0 ? (
           <div className="space-y-2">
-            {pendingRegs.map(reg => (
-              <div 
-                key={reg.id} 
+            {pendingSimaksi.map((item) => (
+              <div
+                key={item.simaksiId}
                 className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between group transition-all hover:border-emerald-200"
               >
-                <div 
+                <div
                   className="flex items-center gap-4 cursor-pointer flex-1"
-                  onClick={() => setSelectedReg(reg)}
+                  onClick={() => setSelectedSimaksi(item)}
                 >
-                  <div className="bg-slate-100 p-3 rounded-2xl group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors">
+                  <div className="bg-slate-100 p-3 rounded-2xl group-hover:bg-emerald-50 transition-colors">
                     <Calendar className="w-6 h-6 text-slate-400 group-hover:text-emerald-600" />
                   </div>
                   <div>
-                    <h4 className="font-black text-slate-800 text-lg leading-none mb-1 italic">{reg.name}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 flex-wrap">
-                      {reg.mountain} • {formatDateRange(reg.date, reg.endDate)}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                       <span className="text-[8px] bg-slate-50 px-2 py-0.5 rounded-full font-black text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-700">KLIK UNTUK DETAIL</span>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-black text-slate-800 text-base leading-none italic">{item.ketuaName}</h4>
+                      {item.source === 'local' && (
+                        <span className="text-[7px] font-black uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded tracking-wider">Offline</span>
+                      )}
                     </div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                      Gn. Slamet • {formatDateRange(item.tanggalNaik, item.tanggalTurun)}
+                    </p>
+                    <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest mt-0.5">
+                      {item.totalAnggota} orang • ID #{item.simaksiId}
+                    </p>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button 
-                    onClick={() => reg.id && handleUpdateReg(reg.id, 'REJECTED')}
+                  <button
+                    onClick={() => handleReject(item)}
                     className="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-colors"
                     title="Tolak"
                   >
                     <X className="w-5 h-5" />
                   </button>
-                  <button 
-                    onClick={() => reg.id && handleUpdateReg(reg.id, 'APPROVED')}
+                  <button
+                    onClick={() => handleApprove(item)}
                     className="p-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all active:scale-95"
                     title="Setujui"
                   >
@@ -306,26 +189,23 @@ export default function AdminDashboard() {
               </div>
             ))}
           </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Permohonan Registrasi</h3>
+        ) : !isLoadingSimaksi ? (
           <div className="bg-white p-10 rounded-3xl border border-dashed border-slate-200 text-center">
             <p className="text-slate-400 font-bold text-xs italic uppercase tracking-widest">Tidak ada permohonan SIMAKSI baru</p>
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
 
-      {/* Detail Modal */}
-      {selectedReg && (
+      {/* Detail Modal SIMAKSI */}
+      {selectedSimaksi && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-end sm:items-center justify-center p-4">
-          <div 
+          <div
             className="w-full max-w-lg bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-emerald-700 p-8 text-white relative shrink-0">
-              <button 
-                onClick={() => setSelectedReg(null)}
+              <button
+                onClick={() => setSelectedSimaksi(null)}
                 className="absolute top-6 right-6 p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -333,148 +213,69 @@ export default function AdminDashboard() {
               <div className="bg-white/20 w-12 h-12 rounded-2xl flex items-center justify-center mb-4">
                 <Info className="w-6 h-6" />
               </div>
-              <h3 className="text-2xl font-black italic uppercase tracking-tighter">Detail Registrasi</h3>
-              <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest opacity-70">Verifikasi data sebelum persetujuan</p>
+              <h3 className="text-2xl font-black italic uppercase tracking-tighter">Detail SIMAKSI</h3>
+              <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest opacity-70">
+                ID #{selectedSimaksi.simaksiId} • Verifikasi sebelum persetujuan
+              </p>
             </div>
 
-            <div className="p-8 space-y-6 flex-1 overflow-y-auto">
+            <div className="p-8 space-y-4 flex-1 overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nama Lengkap</span>
-                  </div>
-                  <p className="font-black text-slate-800 italic uppercase">{selectedReg.name}</p>
-                </div>
-                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Fingerprint className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NIK / Identitas</span>
-                  </div>
-                  <p className="font-black text-slate-800 tracking-wider font-mono text-xs">{selectedReg.nik}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 col-span-2">
                   <div className="flex items-center gap-2 mb-2">
                     <User className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Jenis Kelamin</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ketua Kelompok</span>
                   </div>
-                  <p className="font-black text-slate-800">{selectedReg.gender}</p>
-                </div>
-                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tgl Lahir</span>
-                  </div>
-                  <p className="font-black text-slate-800 text-xs">{selectedReg.birthDate}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nomor Telepon</span>
-                  </div>
-                  <p className="font-black text-slate-800 text-xs font-mono">{selectedReg.phone}</p>
-                </div>
-                <div className="p-4 bg-rose-50 rounded-3xl border border-rose-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Phone className="w-3.5 h-3.5 text-rose-400" />
-                    <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest">No. Darurat</span>
-                  </div>
-                  <p className="font-black text-rose-800 text-xs font-mono">{selectedReg.emergencyPhone || '-'}</p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 text-left">
-                <div className="flex items-center gap-2 mb-2">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alamat (KTP)</span>
-                </div>
-                <p className="font-bold text-slate-705 text-xs leading-relaxed uppercase">{selectedReg.address}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gunung</span>
-                  </div>
-                  <p className="font-black text-slate-800 uppercase italic text-xs">{selectedReg.mountain}</p>
-                </div>
-                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 col-span-2">
-                   <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Jadwal Pendakian</span>
-                  </div>
-                  <p className="font-black text-slate-800 text-xs">{formatDateRange(selectedReg.date, selectedReg.endDate)}</p>
-                </div>
-
-                {/* Group details */}
-                <div className="col-span-2 p-4 bg-slate-50 rounded-3xl border border-slate-100 space-y-2.5 text-left">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-emerald-600" />
-                      <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Rombongan Kelompok</span>
-                    </div>
-                    <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded ${
-                      selectedReg.isLeader ? 'bg-emerald-100 text-emerald-850 animate-pulse' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                      {selectedReg.isLeader ? 'Ketua Kelompok' : 'Solo'}
-                    </span>
-                  </div>
-
-                  {selectedReg.isLeader ? (
-                    <div className="space-y-3.5">
-                      <div className="space-y-1">
-                        <span className="block text-[8px] text-slate-400 font-extrabold uppercase tracking-wider">Anggota Terdaftar ({selectedReg.members?.length || 0} Orang):</span>
-                        {selectedReg.members && selectedReg.members.length > 0 ? (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-32 overflow-y-auto pr-0.5">
-                            {selectedReg.members.map((m: any, idx: number) => (
-                              <div key={idx} className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[10px] flex items-center justify-between">
-                                <span className="font-extrabold text-slate-850 uppercase">{m.name}</span>
-                                <span className="font-mono text-[8px] text-slate-400 font-extrabold bg-slate-50 px-1 py-0.5 rounded leading-none">ID: {m.id}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-[10px] font-bold text-slate-400 italic">Tidak ada anggota yang diinput.</p>
-                        )}
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-200/55 flex items-center justify-between text-[10px]">
-                        <span className="text-slate-400 font-black uppercase tracking-wider">Pernyataan Alat Mandat</span>
-                        <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded">
-                          {selectedReg.checkedGears?.length || 0} / 11 Alat Siap
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-[9px] text-slate-450 font-bold leading-normal italic">
-                      Pendaki mendaftar solo. Pengecekan barang bawaan dilakukan manual dan wajib diverifikasi oleh petugas lapangan di pos loket.
-                    </p>
+                  <p className="font-black text-slate-800 italic uppercase text-lg">{selectedSimaksi.ketuaName}</p>
+                  {selectedSimaksi.idPendaki && (
+                    <p className="text-[9px] font-mono text-slate-400 mt-0.5">ID: {selectedSimaksi.idPendaki}</p>
                   )}
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-4">
-                <button 
-                  onClick={() => {
-                    handleUpdateReg(selectedReg.id!, 'REJECTED');
-                    setSelectedReg(null);
-                  }}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tanggal Naik</span>
+                  </div>
+                  <p className="font-black text-slate-800 text-sm">{selectedSimaksi.tanggalNaik}</p>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tanggal Turun</span>
+                  </div>
+                  <p className="font-black text-slate-800 text-sm">{selectedSimaksi.tanggalTurun}</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-emerald-600" />
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Rombongan</span>
+                </div>
+                <span className="font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl text-sm">
+                  {selectedSimaksi.totalAnggota} Orang
+                </span>
+              </div>
+
+              <div className="p-4 bg-amber-50 rounded-3xl border border-amber-100 flex items-center justify-between">
+                <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Status Saat Ini</span>
+                <span className="font-black text-amber-700 uppercase text-xs bg-amber-100 px-3 py-1 rounded-xl">
+                  {selectedSimaksi.status}
+                </span>
+              </div>
+
+              <div className="flex gap-4 pt-2">
+                <button
+                  onClick={() => handleReject(selectedSimaksi)}
                   className="flex-1 bg-slate-100 text-slate-600 font-black py-4 rounded-2xl text-xs uppercase tracking-widest hover:bg-rose-50 hover:text-rose-600 transition-all"
                 >
                   Tolak
                 </button>
-                <button 
-                  onClick={() => {
-                    handleUpdateReg(selectedReg.id!, 'APPROVED');
-                    setSelectedReg(null);
-                  }}
+                <button
+                  onClick={() => handleApprove(selectedSimaksi)}
                   className="flex-[2] bg-emerald-600 text-white font-black py-4 rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95"
                 >
                   Setujui SIMAKSI
@@ -484,81 +285,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
-      
-      {historyRegs.length > 0 ? (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest italic leading-none">
-              {searchQuery ? `Hasil Pencarian: "${searchQuery}"` : 'Riwayat Data'} ({historyRegs.length})
-            </h3>
-          </div>
-          <div className="space-y-2">
-            {historyRegs.map(reg => (
-              <div 
-                key={reg.id} 
-                className="bg-white p-4 rounded-3xl border border-slate-50 flex items-center justify-between group hover:border-slate-200 transition-all cursor-pointer"
-                onClick={() => setSelectedReg(reg)}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-                    reg.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                  }`}>
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-slate-700 text-sm italic">{reg.name}</h4>
-                      <span className="text-[8px] bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-500 uppercase">NIK: {reg.nik}</span>
-                    </div>
-                    <p className="text-[9px] text-slate-400 uppercase font-black">
-                      {reg.mountain} • {formatDateRange(reg.date, reg.endDate)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right hidden sm:block">
-                    <div className="text-[9px] text-slate-300 font-mono uppercase leading-none mb-1">Status</div>
-                    <div className={`text-[10px] font-black uppercase tracking-tighter ${
-                      reg.status === 'APPROVED' ? 'text-emerald-500' : 'text-rose-500'
-                    }`}>
-                      {reg.status}
-                    </div>
-                  </div>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      reg.id && handleDeleteReg(reg.id);
-                    }}
-                    className="p-2 sm:p-3 bg-slate-50 text-slate-300 rounded-xl hover:bg-rose-50 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : searchQuery ? (
-        <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-slate-200 text-center animate-in fade-in duration-500">
-          <div className="bg-rose-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100">
-             <Search className="w-8 h-8 text-rose-400" />
-          </div>
-          <h4 className="text-slate-800 font-black italic uppercase tracking-tight">Data Tidak Ditemukan</h4>
-          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1">
-             Maaf, tidak terdapat nama atau data "{searchQuery}" dalam sistem.
-          </p>
-          <button 
-            onClick={() => {
-              setSearchInput('');
-              setSearchQuery('');
-              setHasSearched(false);
-            }}
-            className="mt-6 text-[9px] font-black text-emerald-600 underline uppercase tracking-[0.2em]"
-          >
-            Tampilkan Semua Data
-          </button>
-        </div>
-      ) : null}
 
       {/* ================= PUSAT CETAK & SIMULATOR QR CODE ================= */}
       <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-md space-y-6">
@@ -668,12 +394,6 @@ export default function AdminDashboard() {
                     className="w-full mt-1.5 p-3 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-700 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer"
                   >
                     <option value="">-- Pilih Tiket Pendaki --</option>
-                    {registrations.filter(r => r.status === 'APPROVED').map(reg => (
-                      <option key={reg.id} value={`SUMMITY-USER-${reg.id}`}>
-                        {reg.name} ({reg.mountain}) - APPROVED
-                      </option>
-                    ))}
-                    {/* Dummy fallbacks so there is always something to test with */}
                     <option value="SUMMITY-USER-9942">Ahmad Fauzi (Gn. Slamet) - Demo Hiker</option>
                     <option value="SUMMITY-USER-8831">Budi Setiawan (Gn. Slamet) - Demo Hiker</option>
                   </select>
