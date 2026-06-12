@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { getAllScans, getPendingSimaksi, getActiveSimaksiCount, approveSimaksi, rejectSimaksi } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog } from '../../types';
-import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronRight, Info, QrCode, Printer } from 'lucide-react';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronRight, Info, QrCode, Printer, RefreshCw } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
 
 export default function AdminDashboard() {
@@ -13,83 +13,70 @@ export default function AdminDashboard() {
   const [activeSimaksiCount, setActiveSimaksiCount] = useState(0);
   const [selectedSimaksi, setSelectedSimaksi] = useState<any | null>(null);
   const [isLoadingSimaksi, setIsLoadingSimaksi] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   
   // QR Code Simulator page states
   const [activeQrTab, setActiveQrTab] = useState<'pos' | 'ticket'>('pos');
   const [selectedQrTicketId, setSelectedQrTicketId] = useState<string>('');
   const [fullscreenQr, setFullscreenQr] = useState<{ title: string; value: string; subtitle: string } | null>(null);
   
-  useEffect(() => {
-    const fetchData = async () => {
-      const scans = (await getAllScans()) as ScanLog[];
-      setRecentScans([...scans].reverse().slice(0, 5));
+  const fetchData = async () => {
+    const scans = (await getAllScans()) as ScanLog[];
+    setRecentScans([...scans].reverse().slice(0, 5));
 
-      setIsLoadingSimaksi(true);
-      try {
-        const [pending, activeCount] = await Promise.all([
-          getPendingSimaksi(),
-          getActiveSimaksiCount(),
-        ]);
-        setPendingSimaksi(pending);
-        setActiveSimaksiCount(activeCount);
-      } finally {
-        setIsLoadingSimaksi(false);
+    setIsLoadingSimaksi(true);
+    try {
+      const [pending, activeCount] = await Promise.all([
+        getPendingSimaksi(),
+        getActiveSimaksiCount(),
+      ]);
+      setPendingSimaksi(pending);
+      setActiveSimaksiCount(activeCount);
+    } finally {
+      setIsLoadingSimaksi(false);
+    }
+
+    const latestScansByTicket: Record<string, { posId: number; type: string; direction: 'ASCENT' | 'DESCENT' }> = {};
+    const sortedScans = [...scans].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const ticketPeaks: Record<string, boolean> = {};
+
+    sortedScans.forEach(scan => {
+      if (!scan.ticketId) return;
+      if (scan.posId === MOUNTAIN_POS.length - 1) ticketPeaks[scan.ticketId] = true;
+      const isDescent = ticketPeaks[scan.ticketId] && scan.posId < MOUNTAIN_POS.length - 1;
+      latestScansByTicket[scan.ticketId] = {
+        posId: scan.posId ?? 0,
+        type: scan.type || 'POST_CHECK',
+        direction: isDescent ? 'DESCENT' : 'ASCENT'
+      };
+    });
+
+    const locationCounts: Record<number, { ascent: number, descent: number }> = {};
+    Object.values(latestScansByTicket).forEach(status => {
+      if (status.type !== 'CHECK_OUT') {
+        if (!locationCounts[status.posId]) locationCounts[status.posId] = { ascent: 0, descent: 0 };
+        if (status.direction === 'ASCENT') locationCounts[status.posId].ascent += 1;
+        else locationCounts[status.posId].descent += 1;
       }
+    });
+    setHikerLocations(locationCounts);
+    setLastRefresh(new Date());
+  };
 
-      // Calculate where each hiker is based on their latest scan
-      const latestScansByTicket: Record<string, { posId: number; type: string; direction: 'ASCENT' | 'DESCENT' }> = {};
-      
-      // Sort scans by timestamp ascending to track flow
-      const sortedScans = [...scans].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      
-      const ticketPeaks: Record<string, boolean> = {};
-
-      sortedScans.forEach(scan => {
-        if (!scan.ticketId) return;
-
-        if (scan.posId === MOUNTAIN_POS.length - 1) {
-          ticketPeaks[scan.ticketId] = true;
-        }
-
-        const isDescent = ticketPeaks[scan.ticketId] && scan.posId < MOUNTAIN_POS.length - 1;
-        
-        latestScansByTicket[scan.ticketId] = { 
-          posId: scan.posId ?? 0, 
-          type: scan.type || 'POST_CHECK',
-          direction: isDescent ? 'DESCENT' : 'ASCENT'
-        };
-      });
-
-      const locationCounts: Record<number, { ascent: number, descent: number }> = {};
-      Object.values(latestScansByTicket).forEach(status => {
-        if (status.type !== 'CHECK_OUT') {
-          if (!locationCounts[status.posId]) {
-            locationCounts[status.posId] = { ascent: 0, descent: 0 };
-          }
-          if (status.direction === 'ASCENT') {
-            locationCounts[status.posId].ascent += 1;
-          } else {
-            locationCounts[status.posId].descent += 1;
-          }
-        }
-      });
-      setHikerLocations(locationCounts);
-    };
+  useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
   }, []);
 
   const handleApprove = async (item: any) => {
     await approveSimaksi(item.simaksiId, item.localId);
-    setPendingSimaksi(prev => prev.filter(s => s.simaksiId !== item.simaksiId));
     setSelectedSimaksi(null);
+    await fetchData();
   };
 
   const handleReject = async (item: any) => {
     await rejectSimaksi(item.simaksiId, item.localId);
-    setPendingSimaksi(prev => prev.filter(s => s.simaksiId !== item.simaksiId));
     setSelectedSimaksi(null);
+    await fetchData();
   };
 
   const totalActive = Object.values(hikerLocations).reduce((sum, loc) => sum + loc.ascent + loc.descent, 0);
@@ -105,12 +92,20 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-800">Dashboard Monitor</h2>
-        <div className="relative">
-          <div className="absolute inset-0 bg-emerald-400 blur-sm rounded-full opacity-50 animate-pulse"></div>
-          <div className="relative bg-white text-emerald-600 text-[10px] px-2.5 py-1 rounded-full font-bold border border-emerald-100 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-            LIVE MONITORING
-          </div>
+        <div className="flex items-center gap-2">
+          {lastRefresh && (
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider hidden sm:block">
+              {lastRefresh.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+          <button
+            onClick={fetchData}
+            disabled={isLoadingSimaksi}
+            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-[10px] px-3 py-1.5 rounded-full font-black uppercase tracking-wider hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${isLoadingSimaksi ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
       </div>
 
