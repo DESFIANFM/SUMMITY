@@ -29,6 +29,53 @@
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
   }
 
+  // Generate compliant RFC4122 v4 UUID
+  function generateUUID(): string {
+    if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
+      try {
+        const r = (crypto as any).randomUUID();
+        if (isValidUUID(r)) return r;
+      } catch (e) {}
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  // Safely resolve any ID to a valid UUID format
+  function getValidUUID(id: any): string {
+    if (isValidUUID(id)) return id;
+    
+    const searchId = String(id || '').toUpperCase();
+    if (!searchId) return generateUUID();
+
+    const usersListStr = localStorage.getItem('summity_users_list');
+    const usersList: any[] = usersListStr ? JSON.parse(usersListStr) : [];
+    
+    const found = usersList.find(
+      u =>
+        (u.id && String(u.id).toUpperCase() === searchId) ||
+        (u.displayId && u.displayId.toUpperCase() === searchId) ||
+        (u.id_pendaki && u.id_pendaki.toUpperCase() === searchId) ||
+        (u.idPendaki && u.idPendaki.toUpperCase() === searchId)
+    );
+    
+    if (found && isValidUUID(found.id)) {
+      return found.id;
+    }
+    
+    const newUUID = generateUUID();
+    if (found) {
+      found.id = newUUID;
+    } else {
+      usersList.push({ id: newUUID, displayId: searchId, id_pendaki: searchId, idPendaki: searchId });
+    }
+    localStorage.setItem('summity_users_list', JSON.stringify(usersList));
+    return newUUID;
+  }
+
   // Lazy-initialize the Supabase client safely so it does not crash on missing credentials
   let supabaseClient: any = null;
 
@@ -101,15 +148,45 @@
 
     try {
       console.log('[SYNC] 📤 Sending registration to Supabase...');
+      
+      let emailVal = (reg as any).email;
+      if (!emailVal) {
+        try {
+          const activeUserStr = localStorage.getItem('summity_user');
+          if (activeUserStr) {
+            const activeUser = JSON.parse(activeUserStr);
+            if (activeUser.id === reg.userId || activeUser.id === reg.id) {
+              emailVal = activeUser.email;
+            }
+          }
+          if (!emailVal) {
+            const usersListStr = localStorage.getItem('summity_users_list');
+            if (usersListStr) {
+              const usersList = JSON.parse(usersListStr);
+              const found = usersList.find((u: any) => u.id === reg.userId || u.id === reg.id);
+              if (found) {
+                emailVal = found.email;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Error recovering email for sync:', e);
+        }
+      }
+      
+      if (!emailVal) {
+        emailVal = `pendaki-${Date.now()}@summity.com`;
+      }
+
       // Convert camelCase to snake_case for Supabase
       const payload = toSnakeCaseObject({
         // Core identifiers
-        id: reg.id,
-        // NOTE: displayId is kept locally in localStorage only; not synced to Supabase
+        id: getValidUUID(reg.userId || reg.id),
+        idPendaki: reg.idPendaki || reg.displayId,
 
         // Account/profile fields (if present)
         name: reg.name,
-        email: (reg as any).email,
+        email: emailVal,
         username: (reg as any).username,
         password: (reg as any).password,
         phone: reg.phone,
@@ -177,22 +254,92 @@
       // NOTE: switched to upserting into `users` table instead of `registrations`.
       // The app currently prefers to persist account data in `users` and avoid
       // using the `registrations` table until later.
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('users')
-        .upsert(filteredPayload);
+        .upsert(filteredPayload)
+        .select('id, id_pendaki');
 
       if (!error) {
-        console.log('[SYNC] ✅ Registration synced to Supabase successfully!');
+        console.log('[SYNC] ✅ Registration synced to Supabase successfully!', data);
+
+        // Also save/upsert the ticket information into the Supabase tickets table to persist SIMAKSI
+        if (reg.mountain && reg.date) {
+          const ticketPayload = toSnakeCaseObject({
+            id: getValidUUID(reg.userId || reg.id),
+            userId: getValidUUID(reg.userId || reg.id),
+            mountainName: reg.mountain,
+            date: reg.date,
+            endDate: reg.endDate,
+            status: reg.status || 'APPROVED',
+            qrCode: `SUMMITY-USER-${reg.id}`
+          });
+
+          console.log('[SYNC] 🎫 Syncing ticket details to Supabase table:', ticketPayload);
+          const { error: ticketError } = await supabase
+            .from('tickets')
+            .upsert(ticketPayload);
+
+          if (ticketError) {
+            console.warn('[SYNC] ⚠️ Supabase ticket upsert error:', ticketError);
+          } else {
+            console.log('[SYNC] ✅ Ticket synced to Supabase successfully');
+          }
+        }
         const db = await initDB();
         const tx = db.transaction(REG_STORE, 'readwrite');
         const store = tx.objectStore(REG_STORE);
         const savedReg = await store.get(reg.id);
+        
+        let retrievedIdPendaki = '';
+        if (data && data[0] && data[0].id_pendaki) {
+          retrievedIdPendaki = data[0].id_pendaki;
+        }
+
         if (savedReg) {
           savedReg.synced = true;
+          if (retrievedIdPendaki) {
+            savedReg.id_pendaki = retrievedIdPendaki;
+            savedReg.idPendaki = retrievedIdPendaki;
+            savedReg.displayId = retrievedIdPendaki;
+          }
           await store.put(savedReg);
-          console.log('[SYNC] 💾 Marked registration as synced in LocalDB');
+          console.log('[SYNC] 💾 Marked registration as synced in LocalDB', retrievedIdPendaki ? `with id_pendaki: ${retrievedIdPendaki}` : '');
         }
         await tx.done;
+
+        // Also update local storage if this is the active user
+        if (retrievedIdPendaki) {
+          try {
+            const activeUserStr = localStorage.getItem('summity_user');
+            if (activeUserStr) {
+              const activeUser = JSON.parse(activeUserStr);
+              if (activeUser.id === reg.id) {
+                activeUser.id_pendaki = retrievedIdPendaki;
+                activeUser.idPendaki = retrievedIdPendaki;
+                activeUser.displayId = retrievedIdPendaki;
+                localStorage.setItem('summity_user', JSON.stringify(activeUser));
+                console.log('[SYNC] 👤 Updated active user in localStorage with synced id_pendaki:', retrievedIdPendaki);
+              }
+            }
+            
+            // Also update the list of users
+            const usersListStr = localStorage.getItem('summity_users_list');
+            if (usersListStr) {
+              const usersList = JSON.parse(usersListStr);
+              const idx = usersList.findIndex((u: any) => u.id === reg.id);
+              if (idx !== -1) {
+                usersList[idx].id_pendaki = retrievedIdPendaki;
+                usersList[idx].idPendaki = retrievedIdPendaki;
+                usersList[idx].displayId = retrievedIdPendaki;
+                localStorage.setItem('summity_users_list', JSON.stringify(usersList));
+                console.log('[SYNC] 👥 Updated user in summity_users_list with synced id_pendaki:', retrievedIdPendaki);
+              }
+            }
+          } catch (e) {
+            console.error('[SYNC] Error updating local storage user definitions:', e);
+          }
+        }
+
         return true;
       } else {
         console.warn('[SYNC] ❌ Supabase registration error:', error, '- will retry offline');
@@ -376,6 +523,10 @@
           u =>
             (u.displayId &&
               u.displayId.toUpperCase() === searchDisplay) ||
+            (u.id_pendaki &&
+              u.id_pendaki.toUpperCase() === searchDisplay) ||
+            (u.idPendaki &&
+              u.idPendaki.toUpperCase() === searchDisplay) ||
             (u.id &&
               String(u.id).toUpperCase() === searchDisplay)
         );
@@ -388,9 +539,7 @@
         } else {
           console.warn('[DEBUG] ⚠️ User not found in list, generating new UUID for display:', searchDisplay);
           // Generate new UUID and store mapping
-          const newInternalId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
-            ? (crypto as any).randomUUID()
-            : `generated-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const newInternalId = generateUUID();
           const newEntry = { id: newInternalId, displayId: searchDisplay };
           usersList.push(newEntry);
           localStorage.setItem('summity_users_list', JSON.stringify(usersList));

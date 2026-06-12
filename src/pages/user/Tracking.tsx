@@ -121,8 +121,7 @@ export default function UserTracking() {
         </div>
         <button 
           onClick={() => {
-            setSearchParams({});
-            navigate('/register');
+            setSearchParams({ view: 'simaksi' });
           }}
           className="bg-slate-900 shadow-xl shadow-slate-200 text-white font-black px-8 py-4 rounded-2xl text-xs uppercase tracking-[0.2em]"
         >

@@ -18,9 +18,13 @@ import {
   MapPin,
   AlertTriangle,
   ArrowRight,
-  Ticket
+  ArrowLeft,
+  ChevronLeft,
+  Ticket,
+  Mountain
 } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
+import InlineSimaksiForm from '../../components/InlineSimaksiForm';
 
 export default function UserDashboard() {
   const { user } = useAuth();
@@ -29,6 +33,7 @@ export default function UserDashboard() {
   const [totalActive, setTotalActive] = useState(0);
   const [hikerData, setHikerData] = useState<{ ascent: number, descent: number }>({ ascent: 0, descent: 0 });
   const [activeTicket, setActiveTicket] = useState<RegistrationRequest | null>(null);
+  const [showSimaksiForm, setShowSimaksiForm] = useState(false);
   
   useEffect(() => {
     const fetchData = async () => {
@@ -36,20 +41,20 @@ export default function UserDashboard() {
       const regs = await getAllRegistrations();
       
       const userRegs = regs.filter(r => 
-        r.userId === user?.id || 
-        (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()))
+         r.userId === user?.id || 
+         (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()))
       );
       
       // Sort userRegs by createdAt descending to get newest first reliably
       const sortedUserRegs = [...userRegs].sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       
       // Look for the most relevant ticket status
       const latestTicket = sortedUserRegs.find(r => r.status === 'APPROVED') 
-        || sortedUserRegs.find(r => r.status === 'PENDING')
-        || sortedUserRegs.find(r => r.status === 'REJECTED');
-        
+         || sortedUserRegs.find(r => r.status === 'PENDING')
+         || sortedUserRegs.find(r => r.status === 'REJECTED');
+         
       setActiveTicket(latestTicket || null);
 
       const latestScansByTicket: Record<string, { type: string; direction: 'ASCENT' | 'DESCENT' }> = {};
@@ -57,23 +62,23 @@ export default function UserDashboard() {
       const ticketPeaks: Record<string, boolean> = {};
 
       sortedScans.forEach(scan => {
-        if (!scan.ticketId) return;
-        if (scan.posId === MOUNTAIN_POS.length - 1) ticketPeaks[scan.ticketId] = true;
-        const isDescent = ticketPeaks[scan.ticketId] && scan.posId! < MOUNTAIN_POS.length - 1;
-        
-        latestScansByTicket[scan.ticketId] = { 
-          type: scan.type || 'POST_CHECK',
-          direction: isDescent ? 'DESCENT' : 'ASCENT'
-        };
+         if (!scan.ticketId) return;
+         if (scan.posId === MOUNTAIN_POS.length - 1) ticketPeaks[scan.ticketId] = true;
+         const isDescent = ticketPeaks[scan.ticketId] && scan.posId! < MOUNTAIN_POS.length - 1;
+         
+         latestScansByTicket[scan.ticketId] = { 
+            type: scan.type || 'POST_CHECK',
+            direction: isDescent ? 'DESCENT' : 'ASCENT'
+         };
       });
 
       let ascent = 0;
       let descent = 0;
       Object.values(latestScansByTicket).forEach(status => {
-        if (status.type !== 'CHECK_OUT') {
-          if (status.direction === 'ASCENT') ascent++;
-          else descent++;
-        }
+         if (status.type !== 'CHECK_OUT') {
+            if (status.direction === 'ASCENT') ascent++;
+            else descent++;
+         }
       });
       
       setHikerData({ ascent, descent });
@@ -81,7 +86,16 @@ export default function UserDashboard() {
     };
     fetchData();
     const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
+    
+    const handleReload = () => {
+      fetchData();
+    };
+    window.addEventListener('reload-tickets', handleReload);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('reload-tickets', handleReload);
+    };
   }, [user?.id]);
 
   const mountainStatus = "OPEN"; // Mock status
@@ -98,6 +112,40 @@ export default function UserDashboard() {
     { title: "Gunakan Perlengkapan Standar", desc: "Sepatu gunung & sleeping bag wajib" },
     { title: "Dilarang Membuat Api Unggun", desc: "Gunakan kompor portable" }
   ];
+
+  if (showSimaksiForm) {
+    return (
+      <div className="space-y-6 pb-20 animate-in fade-in duration-300">
+        {/* Back Navigation Bar */}
+        <div className="flex items-center gap-3 bg-white p-4 sm:p-5 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-100/40">
+          <button 
+            type="button"
+            onClick={() => setShowSimaksiForm(false)}
+            className="w-10 h-10 bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-600 rounded-xl flex items-center justify-center transition-all border border-slate-100"
+            title="Kembali ke Beranda"
+          >
+            <ArrowLeft className="w-5 h-5 text-slate-600" />
+          </button>
+          <div className="h-8 w-px bg-slate-100 mx-1"></div>
+          <div>
+            <h2 className="text-sm sm:text-base font-black text-slate-800 italic uppercase leading-none">Registrasi Baru</h2>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Formulir Mandiri & Rombongan SIMAKSI</p>
+          </div>
+        </div>
+
+        {/* Dedicated Page Form Content */}
+        <div className="max-w-2xl mx-auto">
+          <InlineSimaksiForm 
+            onSuccess={() => {
+              setShowSimaksiForm(false);
+              window.dispatchEvent(new Event('reload-tickets'));
+            }}
+            onCancel={() => setShowSimaksiForm(false)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-4">
@@ -145,8 +193,29 @@ export default function UserDashboard() {
         </div>
       </div>
 
-      {/* Action CTA */}
-      {activeTicket ? (
+      {/* Registrasi SIMAKSI Page Trigger Button */}
+      <div className="space-y-4">
+        <button 
+          onClick={() => setShowSimaksiForm(true)}
+          className="w-full bg-emerald-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center justify-between group shadow-xl shadow-emerald-100 transition-all hover:bg-emerald-700 active:scale-[0.98]"
+        >
+          <div className="text-left flex items-center gap-3.5">
+            <div className="bg-white/20 p-2.5 rounded-2xl">
+              <Mountain className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Registrasi SIMAKSI</h3>
+              <p className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-widest opacity-70">Pendaftaran Pendakian Baru & Kelompok</p>
+            </div>
+          </div>
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:translate-x-2 transition-transform">
+            <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+          </div>
+        </button>
+      </div>
+
+      {/* Action CTA - Tiket Saya */}
+      {activeTicket && (
         <div className="bg-white p-5 sm:p-6 rounded-[2.5rem] border border-emerald-100 shadow-xl shadow-emerald-50/50 space-y-4 relative overflow-hidden">
           <div className="absolute -top-4 -right-4 w-32 h-32 bg-emerald-50 rounded-full blur-2xl opacity-50"></div>
           <div className="flex items-center justify-between relative z-10">
@@ -215,19 +284,6 @@ export default function UserDashboard() {
             )}
           </div>
         </div>
-      ) : (
-        <button 
-          onClick={() => navigate('/register')}
-          className="w-full bg-emerald-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center justify-between group shadow-xl shadow-emerald-100 transition-all hover:bg-emerald-700 active:scale-[0.98]"
-        >
-          <div className="text-left">
-            <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Daftar SIMAKSI</h3>
-            <p className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-widest opacity-70">Pendaftaran pendakian resmi</p>
-          </div>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:translate-x-2 transition-transform">
-            <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-          </div>
-        </button>
       )}
 
       {/* Rules Section */}
