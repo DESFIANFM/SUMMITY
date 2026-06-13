@@ -5,7 +5,13 @@
       "Bash(npx --yes tsc --version)",
       "Bash(npx vite *)",
       "Bash(npm run *)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(git push *)",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(git remote *)",
+      "Bash(gh pr create --repo ibang333/SUMMITY --base main --head fix/simaksi --title 'feat: SIMAKSI registration, admin dashboard & offline-online sync' --body ' *)",
+      "Bash(grep -n \"Daftar Ulang\\\\|^  \\);\\\\|^}$\" /Users/xapiens/Documents/Iseng/SUMMITY/SUMMITY/src/pages/user/Tickets.tsx)"
     ]
   }
 }

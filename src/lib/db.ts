@@ -1012,20 +1012,120 @@
       }));
   }
 
+  export async function getUserSimaksi(userId: string): Promise<any[]> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      // Kumpulkan simaksi_id user (sebagai ketua)
+      const { data: asKetua } = await supabase
+        .from('simaksi')
+        .select('id, kode_simaksi, status, ketua_user_id, tanggal_naik, tanggal_turun, total_anggota, created_at')
+        .eq('ketua_user_id', userId)
+        .neq('status', 'draft')
+        .order('created_at', { ascending: false });
+
+      // Kumpulkan simaksi_id user (sebagai anggota)
+      const { data: anggotaRows } = await supabase
+        .from('simaksi_anggota')
+        .select('simaksi_id')
+        .eq('user_id', userId);
+
+      const anggotaIds = (anggotaRows || []).map((r: any) => r.simaksi_id);
+      let asAnggota: any[] = [];
+      if (anggotaIds.length > 0) {
+        const { data } = await supabase
+          .from('simaksi')
+          .select('id, kode_simaksi, status, ketua_user_id, tanggal_naik, tanggal_turun, total_anggota, created_at')
+          .in('id', anggotaIds)
+          .neq('status', 'draft')
+          .order('created_at', { ascending: false });
+        asAnggota = data || [];
+      }
+
+      // Gabungkan, hilangkan duplikat
+      const allIds = new Set<number>();
+      const combined: any[] = [];
+      for (const s of [...(asKetua || []), ...asAnggota]) {
+        if (!allIds.has(s.id)) { allIds.add(s.id); combined.push(s); }
+      }
+
+      if (combined.length === 0) return [];
+
+      // Fetch nama ketua
+      const ketuaIds = [...new Set(combined.map((s: any) => s.ketua_user_id))];
+      const { data: ketuaUsers } = await supabase.from('users').select('id, name').in('id', ketuaIds);
+      const ketuaMap: Record<string, string> = {};
+      (ketuaUsers || []).forEach((u: any) => { ketuaMap[u.id] = u.name; });
+
+      // Fetch anggota per simaksi
+      const simaksiIds = combined.map((s: any) => s.id);
+      const { data: anggotaDetail } = await supabase
+        .from('simaksi_anggota')
+        .select('simaksi_id, user_id, users(name, id_pendaki)')
+        .in('simaksi_id', simaksiIds);
+      const membersMap: Record<number, { id: string; name: string }[]> = {};
+      (anggotaDetail || []).forEach((a: any) => {
+        if (!membersMap[a.simaksi_id]) membersMap[a.simaksi_id] = [];
+        membersMap[a.simaksi_id].push({ id: a.users?.id_pendaki || a.user_id, name: a.users?.name || 'Anggota' });
+      });
+
+      return combined
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .map((s: any) => ({
+          simaksiId: s.id,
+          kodeSimaksi: s.kode_simaksi || null,
+          status: s.status,
+          ketuaName: ketuaMap[s.ketua_user_id] || 'Ketua',
+          ketuaUserId: s.ketua_user_id,
+          tanggalNaik: s.tanggal_naik,
+          tanggalTurun: s.tanggal_turun,
+          totalAnggota: s.total_anggota,
+          isKetua: s.ketua_user_id === userId,
+          members: membersMap[s.id] || [],
+          createdAt: s.created_at,
+          qrCode: `SUMMITY-SIMAKSI-${s.id}`,
+        }));
+    }
+
+    // Offline: IndexedDB
+    const db = await initDB();
+    const all = await db.getAll(SIMAKSI_STORE) as any[];
+    return all
+      .filter(s => s.status !== 'draft' &&
+        (s.ketuaUserId === userId || (s.members || []).some((m: any) => m.id === userId)))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map(s => ({
+        simaksiId: s.simaksiId || s.id,
+        kodeSimaksi: s.kodeSimaksi || null,
+        status: s.status,
+        ketuaName: s.ketuaName || 'Ketua',
+        ketuaUserId: s.ketuaUserId,
+        tanggalNaik: s.tanggalNaik,
+        tanggalTurun: s.tanggalTurun,
+        totalAnggota: s.totalAnggota || 1 + (s.members?.length || 0),
+        isKetua: s.ketuaUserId === userId,
+        members: s.members || [],
+        createdAt: s.createdAt,
+        qrCode: `SUMMITY-SIMAKSI-${s.simaksiId || s.id}`,
+      }));
+  }
+
   export async function approveSimaksi(simaksiId: number, localId?: number): Promise<boolean> {
     const supabase = getSupabaseClient();
     let ok = false;
 
+    const now = new Date();
+    const kodeSimaksi = `SMK-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${String(simaksiId).padStart(4, '0')}`;
+
     if (supabase && isOnline()) {
       const { error } = await supabase
         .from('simaksi')
-        .update({ status: 'approved' })
+        .update({ status: 'approved', kode_simaksi: kodeSimaksi, approved_at: now.toISOString() })
         .eq('id', simaksiId);
       if (error) console.warn('[SIMAKSI-ADMIN] Gagal approve:', JSON.stringify(error));
       else ok = true;
     }
 
-    // Sinkronkan ke IndexedDB juga
     const targetLocalId = localId ?? simaksiId;
     try {
       const db = await initDB();
@@ -1034,6 +1134,7 @@
       const item = await store.get(targetLocalId);
       if (item) {
         item.status = 'approved';
+        item.kodeSimaksi = kodeSimaksi;
         item.synced = ok;
         await store.put(item);
       }
@@ -1071,6 +1172,40 @@
     } catch (_) {}
 
     return ok;
+  }
+
+  export async function completeSimaksi(simaksiId: number): Promise<{ ok: boolean; kodeSimaksi: string | null }> {
+    const supabase = getSupabaseClient();
+    let ok = false;
+    let kodeSimaksi: string | null = null;
+
+    if (supabase && isOnline()) {
+      const { data, error } = await supabase
+        .from('simaksi')
+        .update({ status: 'complete' })
+        .eq('id', simaksiId)
+        .select('kode_simaksi')
+        .maybeSingle();
+      if (error) console.warn('[SIMAKSI] Gagal complete:', JSON.stringify(error));
+      else { ok = true; kodeSimaksi = data?.kode_simaksi ?? null; }
+    }
+
+    try {
+      const db = await initDB();
+      const tx = db.transaction(SIMAKSI_STORE, 'readwrite');
+      const store = tx.objectStore(SIMAKSI_STORE);
+      const all = await store.getAll();
+      const item = all.find((s: any) => s.simaksiId === simaksiId || s.id === simaksiId);
+      if (item) {
+        item.status = 'complete';
+        item.synced = ok;
+        await store.put(item);
+        if (!kodeSimaksi) kodeSimaksi = item.kodeSimaksi ?? null;
+      }
+      await tx.done;
+    } catch (_) {}
+
+    return { ok, kodeSimaksi };
   }
 
   export async function saveSimaksi(data: Omit<SimaksiRequest, 'id'>): Promise<number> {

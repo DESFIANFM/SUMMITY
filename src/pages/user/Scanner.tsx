@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { saveScan, getAllRegistrations, getAllScans } from '../../lib/db';
-import { MOUNTAIN_POS, MOCK_TICKETS } from '../../lib/mockData';
+import { saveScan, getAllScans, getUserSimaksi } from '../../lib/db';
+import { MOUNTAIN_POS } from '../../lib/mockData';
 import { useAuth } from '../../context/AuthContext';
 import { Camera, CheckCircle, WifiOff, MapPin, Navigation, Clock } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -14,7 +14,7 @@ export default function UserScanner() {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [loading, setLoading] = useState(true);
   const [registrationStatus, setRegistrationStatus] = useState<'NONE' | 'PENDING' | 'APPROVED'>('NONE');
-  
+
   useEffect(() => {
     const handleStatusChange = () => setIsOffline(!navigator.onLine);
     window.addEventListener('online', handleStatusChange);
@@ -27,22 +27,13 @@ export default function UserScanner() {
 
   useEffect(() => {
     const checkStatus = async () => {
-      const regs = await getAllRegistrations();
-      const userRegs = regs.filter(r => 
-        r.userId === user?.id || 
-        (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()))
-      );
-      
-      const approvedReg = userRegs.find(r => r.status === 'APPROVED');
-      const pendingReg = userRegs.find(r => r.status === 'PENDING');
-      
-      if (approvedReg) {
-        setRegistrationStatus('APPROVED');
-      } else if (pendingReg) {
-        setRegistrationStatus('PENDING');
-      } else {
-        setRegistrationStatus('NONE');
-      }
+      if (!user?.id) return;
+      const list = await getUserSimaksi(user.id);
+      const approved = list.find(s => ['approved', 'checkin', 'checkout'].includes(s.status));
+      const pending = list.find(s => s.status === 'pending');
+      if (approved) setRegistrationStatus('APPROVED');
+      else if (pending) setRegistrationStatus('PENDING');
+      else setRegistrationStatus('NONE');
       setLoading(false);
     };
     checkStatus();
@@ -89,19 +80,15 @@ export default function UserScanner() {
 
       setScanResult(posName);
 
-      // Determine real ticket ID
+      // Determine real ticket ID dari SIMAKSI approved
       let ticketId = '';
-      
-      const regs = await getAllRegistrations();
-      const approved = regs.find(r => 
-        (r.userId === user?.id || (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase()))) && 
-        r.status === 'APPROVED'
-      );
-      
-      if (approved) {
-        ticketId = `SUMMITY-USER-${approved.id}`;
+
+      const simaksiList = await getUserSimaksi(user?.id || '');
+      const activeSimaksi = simaksiList.find(s => ['approved', 'checkin', 'checkout'].includes(s.status));
+
+      if (activeSimaksi) {
+        ticketId = activeSimaksi.qrCode; // SUMMITY-SIMAKSI-{id}
       } else {
-        // Fallback for demo if no registration found
         ticketId = `SUMMITY-DEMO-TICKET`;
       }
 
