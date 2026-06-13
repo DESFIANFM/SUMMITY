@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { MOUNTAIN_POS, calculateETA, MOCK_TICKETS } from '../../lib/mockData';
-import { getAllScans, getAllRegistrations } from '../../lib/db';
+import { MOUNTAIN_POS, calculateETA } from '../../lib/mockData';
+import { getUserActiveTicket, getTrackingHistoryByTicket, getUserSimaksi } from '../../lib/db';
 import { useAuth } from '../../context/AuthContext';
 import GPSMap from '../../components/GPSMap';
-import { Timer, ArrowUpCircle, Map, Info, ShieldCheck, Clock, MapPinned } from 'lucide-react';
+import { ArrowUpCircle, Map, Info, ShieldCheck, Clock, MapPinned } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
 
 export default function UserTracking() {
@@ -17,58 +17,48 @@ export default function UserTracking() {
   const [mountainName, setMountainName] = useState<string>('Gn. Slamet');
   const [direction, setDirection] = useState<'ASCENT' | 'DESCENT'>('ASCENT');
   const [scansList, setScansList] = useState<any[]>([]);
-  
+
   const [loading, setLoading] = useState(true);
   const [registrationStatus, setRegistrationStatus] = useState<'NONE' | 'PENDING' | 'APPROVED'>('NONE');
-  
+
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Get registrations for current user
-      const regs = await getAllRegistrations();
-      const userRegs = regs
-          .filter(r => r.userId === user?.id || (r.members && r.members.some((m: any) => m.id.toUpperCase() === user?.id?.toUpperCase())))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      
-      const approvedReg = userRegs.find(r => r.status === 'APPROVED');
-      const pendingReg = userRegs.find(r => r.status === 'PENDING');
-      
-      if (approvedReg) {
-        setRegistrationStatus('APPROVED');
-        setMountainName(approvedReg.mountain);
-      } else if (pendingReg) {
-        setRegistrationStatus('PENDING');
-      } else {
-        setRegistrationStatus('NONE');
-      }
-      
-      const ticketId = approvedReg ? `SUMMITY-USER-${approvedReg.id}` : MOCK_TICKETS[0].qrCode;
+      if (!user?.id) return;
 
-      // 2. Get scans for this ticket
-      const scans = await getAllScans();
-      const userScans = scans.filter(s => s.ticketId === ticketId);
-      setScansList(userScans);
-      const lastScan = userScans[userScans.length - 1];
-      
-      if (lastScan) {
-        setCurrentPosIndex(lastScan.posId);
-        setLastScanTime(new Date(lastScan.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        
-        // Detect direction: either they reached peak and are returning, OR they aborted early and are returning.
-        // We find the maximum posId they reached during this trip.
-        let maxPosIdReached = -1;
-        userScans.forEach(s => {
-          if (s.posId > maxPosIdReached) {
-            maxPosIdReached = s.posId;
-          }
-        });
-        
-        // If they are currently at a position lower than the highest peak they reached, they are on DESCENT.
-        if (maxPosIdReached > lastScan.posId) {
-          setDirection('DESCENT');
-        } else {
-          setDirection('ASCENT');
+      // 1. Cek tiket individu user dari tabel tickets
+      const ticket = await getUserActiveTicket(user.id);
+
+      if (ticket) {
+        setRegistrationStatus('APPROVED');
+        setMountainName(ticket.mountain_name || 'Gn. Slamet');
+
+        // 2. Ambil tracking history dari tracking_history (supabase) / antrian lokal IndexedDB
+        const history = await getTrackingHistoryByTicket(ticket.id);
+        setScansList(history);
+
+        const lastRecord = history[history.length - 1];
+        if (lastRecord) {
+          const posIdx = lastRecord.posId ?? 0;
+          setCurrentPosIndex(posIdx);
+          const ts = lastRecord.scanned_at || lastRecord.timestamp;
+          setLastScanTime(new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+          // Deteksi arah: jika ada pos yang lebih tinggi dari posisi terakhir → sedang turun
+          let maxPosReached = posIdx;
+          history.forEach((h: any) => {
+            const hIdx = h.posId ?? 0;
+            if (hIdx > maxPosReached) maxPosReached = hIdx;
+          });
+          setDirection(maxPosReached > posIdx ? 'DESCENT' : 'ASCENT');
         }
+      } else {
+        // Tidak ada tiket aktif — cek apakah ada simaksi pending
+        const simaksiList = await getUserSimaksi(user.id);
+        const pending = simaksiList.find((s: any) => s.status === 'pending');
+        if (pending) setRegistrationStatus('PENDING');
+        else setRegistrationStatus('NONE');
       }
+
       setLoading(false);
     };
     fetchData();

@@ -83,10 +83,16 @@ export interface Ticket {
 export interface ScanLog {
   id?: number;
   ticketId: string;
+  userId?: string;
   timestamp: string;
   type: 'CHECK_IN' | 'CHECK_OUT' | 'POST_CHECK';
-  posId: number; // ID pos tempat scan dilakukan
+  posId: number;
   synced: boolean;
+  // enriched fields from getAllTrackingHistory
+  anggotaName?: string;
+  kodeSimaksi?: string;
+  ketuaName?: string;
+  validationStatus?: string;
 }
 
 export interface HikeStats {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { getUserSimaksi } from '../../lib/db';
+import { getUserSimaksi, getUserActiveTicket } from '../../lib/db';
 import { useAuth } from '../../context/AuthContext';
 import { Calendar, MapPin, QrCode, PlusCircle, Clock, AlertCircle, Camera, Users, ShieldCheck, CheckCircle2, Mountain, X, LogOut } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
@@ -10,14 +10,19 @@ export default function UserTickets() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const [simaksiList, setSimaksiList] = useState<any[]>([]);
+  const [userTicket, setUserTicket] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [showKepulangan, setShowKepulangan] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
       if (!user?.id) return;
-      const data = await getUserSimaksi(user.id);
+      const [data, ticket] = await Promise.all([
+        getUserSimaksi(user.id),
+        getUserActiveTicket(user.id),
+      ]);
       setSimaksiList(data);
+      setUserTicket(ticket);
       setLoading(false);
     };
     fetch();
@@ -147,27 +152,42 @@ export default function UserTickets() {
           </div>
 
           <div className="p-6 sm:p-8 flex flex-col items-center">
-            {/* QR Code */}
-            <div className="bg-slate-50 p-4 sm:p-6 rounded-[2rem] mb-5 shadow-inner border border-slate-100">
-              <QRCodeSVG
-                value={activeSimaksi.qrCode}
-                size={140}
-                className="w-28 h-28 sm:w-36 sm:h-36"
-                level="H"
-                includeMargin={true}
-              />
-            </div>
+            {/* QR Code — tiket individu jika sudah tersedia, fallback ke simaksi QR */}
+            {(() => {
+              const qrValue = userTicket?.qr_code || activeSimaksi.qrCode;
+              const isIndividual = !!userTicket?.qr_code;
+              return (
+                <>
+                  <div className="bg-slate-50 p-4 sm:p-6 rounded-[2rem] mb-5 shadow-inner border border-slate-100">
+                    <QRCodeSVG
+                      value={qrValue}
+                      size={140}
+                      className="w-28 h-28 sm:w-36 sm:h-36"
+                      level="H"
+                      includeMargin={true}
+                    />
+                  </div>
 
-            {/* Kode & Status */}
-            <div className="text-center mb-6">
-              <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">KODE QR TIKET</div>
-              <div className="text-xs font-mono font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl">{activeSimaksi.qrCode}</div>
-              <div className="mt-2 flex justify-center">
-                <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${statusColor[activeSimaksi.status] || ''}`}>
-                  {statusLabel[activeSimaksi.status] || activeSimaksi.status.toUpperCase()}
-                </span>
-              </div>
-            </div>
+                  {/* Kode & Status */}
+                  <div className="text-center mb-6">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">
+                      {isIndividual ? 'TIKET PRIBADI' : 'KODE QR TIKET'}
+                    </div>
+                    <div className="text-xs font-mono font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl break-all">{qrValue}</div>
+                    {isIndividual && (
+                      <div className="text-[8px] text-emerald-600 font-bold uppercase tracking-widest mt-1">
+                        ✓ Tiket Individual Terverifikasi
+                      </div>
+                    )}
+                    <div className="mt-2 flex justify-center">
+                      <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${statusColor[activeSimaksi.status] || ''}`}>
+                        {statusLabel[activeSimaksi.status] || activeSimaksi.status.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Tombol Scanner + Lapor Kepulangan */}
             {['approved', 'checkin', 'checkout'].includes(activeSimaksi.status) && (

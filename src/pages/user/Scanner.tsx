@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { saveScan, getAllScans, getUserSimaksi } from '../../lib/db';
+import { getUserSimaksi, getUserActiveTicket, insertTrackingHistory } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { useAuth } from '../../context/AuthContext';
 import { Camera, CheckCircle, WifiOff, MapPin, Navigation, Clock } from 'lucide-react';
@@ -80,47 +80,36 @@ export default function UserScanner() {
 
       setScanResult(posName);
 
-      // Determine real ticket ID dari SIMAKSI approved
-      let ticketId = '';
+      const scannedAt = new Date().toISOString();
 
-      const simaksiList = await getUserSimaksi(user?.id || '');
-      const activeSimaksi = simaksiList.find(s => ['approved', 'checkin', 'checkout'].includes(s.status));
+      // Ambil tiket individu user dari tabel tickets
+      const ticket = await getUserActiveTicket(user?.id || '');
 
-      if (activeSimaksi) {
-        ticketId = activeSimaksi.qrCode; // SUMMITY-SIMAKSI-{id}
+      if (ticket) {
+        // Insert ke tracking_history Supabase; jika offline masuk antrian lokal IndexedDB
+        await insertTrackingHistory({
+          ticketId: ticket.id,
+          userId: user?.id || '',
+          posIndex: posId,
+          scannedAt,
+          deviceId: navigator.userAgent,
+          isOffline: !navigator.onLine,
+        });
       } else {
-        ticketId = `SUMMITY-DEMO-TICKET`;
+        // Fallback jika tiket belum ada (simaksi belum diapprove / offline)
+        const simaksiList = await getUserSimaksi(user?.id || '');
+        const activeSimaksi = simaksiList.find(s => ['approved', 'checkin', 'checkout'].includes(s.status));
+        const fallbackTicketId = activeSimaksi ? activeSimaksi.qrCode : 'SUMMITY-DEMO-TICKET';
+
+        await insertTrackingHistory({
+          ticketId: fallbackTicketId,
+          userId: user?.id || '',
+          posIndex: posId,
+          scannedAt,
+          isOffline: !navigator.onLine,
+        });
       }
 
-      // Fetch all scans for this ticket to determine type
-      const allScans = await getAllScans();
-      const userScans = allScans.filter(s => s.ticketId === ticketId);
-      
-      let scanType: 'CHECK_IN' | 'CHECK_OUT' | 'POST_CHECK' = 'POST_CHECK';
-      
-      if (posId === 0) {
-        if (userScans.length === 0) {
-          scanType = 'CHECK_IN';
-        } else {
-          const reachedPeak = userScans.some(s => s.posId === MOUNTAIN_POS.length - 1);
-          if (reachedPeak || userScans.length > 2) {
-            scanType = 'CHECK_OUT';
-          } else {
-            scanType = 'CHECK_IN';
-          }
-        }
-      }
-
-      // Simpan log scan
-      await saveScan({
-        ticketId: ticketId,
-        timestamp: new Date().toISOString(),
-        type: scanType,
-        posId: posId,
-        synced: navigator.onLine,
-      });
-
-      // Shorter delay + clearer feedback
       setTimeout(() => setSearchParams({ view: 'tracking' }), 1500);
     }
   }
