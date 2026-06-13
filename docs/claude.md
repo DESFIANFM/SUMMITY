@@ -1,3 +1,10 @@
-ALTER TABLE simaksi DROP CONSTRAINT IF EXISTS chk_status_simaksi;
-ALTER TABLE simaksi ADD CONSTRAINT chk_status_simaksi
-  CHECK (status IN ('draft', 'pending', 'approved', 'rejected', 'checkin', 'checkout', 'complete'));
+ALTER TABLE tracking_history
+DROP CONSTRAINT fk_tracking_history_pos;
+
+ALTER TABLE tracking_history
+ALTER COLUMN pos_id TYPE BIGINT USING pos_id::BIGINT;
+
+ALTER TABLE tracking_history
+ADD CONSTRAINT fk_tracking_history_pos
+FOREIGN KEY (pos_id)
+REFERENCES pos(id);
