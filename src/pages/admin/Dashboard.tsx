@@ -1,14 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { getAllScans, getPendingSimaksi, getActiveSimaksiCount, approveSimaksi, rejectSimaksi } from '../../lib/db';
+import { getAllTrackingHistory, getPendingSimaksi, getActiveSimaksiCount, approveSimaksi, rejectSimaksi } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog } from '../../types';
-import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronRight, Info, QrCode, Printer, RefreshCw } from 'lucide-react';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
 
 export default function AdminDashboard() {
   const [hikerLocations, setHikerLocations] = useState<Record<number, { ascent: number, descent: number }>>({});
-  const [recentScans, setRecentScans] = useState<ScanLog[]>([]);
+  const [allScans, setAllScans] = useState<ScanLog[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [pendingSimaksi, setPendingSimaksi] = useState<any[]>([]);
   const [activeSimaksiCount, setActiveSimaksiCount] = useState(0);
   const [selectedSimaksi, setSelectedSimaksi] = useState<any | null>(null);
@@ -20,9 +24,38 @@ export default function AdminDashboard() {
   const [selectedQrTicketId, setSelectedQrTicketId] = useState<string>('');
   const [fullscreenQr, setFullscreenQr] = useState<{ title: string; value: string; subtitle: string } | null>(null);
   
+  const filteredScans = useMemo(() => {
+    const seenCheckoutKeys = new Set<string>();
+    let result = allScans.filter(log => {
+      const isCheckout = log.validationStatus === 'checkout' || log.type === 'CHECK_OUT';
+      if (isCheckout) {
+        const key = log.kodeSimaksi || log.ticketId || 'unknown';
+        if (seenCheckoutKeys.has(key)) return false;
+        seenCheckoutKeys.add(key);
+      }
+      return true;
+    });
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter(log =>
+        (log.kodeSimaksi || '').toLowerCase().includes(q) ||
+        (log.ketuaName || '').toLowerCase().includes(q) ||
+        (log.anggotaName || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [allScans, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredScans.length / itemsPerPage));
+
+  const paginatedScans = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredScans.slice(start, start + itemsPerPage);
+  }, [filteredScans, currentPage, itemsPerPage]);
+
   const fetchData = async () => {
-    const scans = (await getAllScans()) as ScanLog[];
-    setRecentScans([...scans].reverse().slice(0, 5));
+    const scans = (await getAllTrackingHistory()) as ScanLog[];
+    setAllScans(scans);
 
     setIsLoadingSimaksi(true);
     try {
@@ -81,12 +114,6 @@ export default function AdminDashboard() {
 
   const totalActive = Object.values(hikerLocations).reduce((sum, loc) => sum + loc.ascent + loc.descent, 0);
 
-  const getHikerName = (ticketId: string) => {
-    if (!ticketId) return 'Pendaki Umum';
-    if (ticketId.includes('9942')) return 'Ahmad Fauzi';
-    if (ticketId.includes('8831')) return 'Budi Setiawan';
-    return ticketId;
-  };
 
   return (
     <div className="space-y-6">
@@ -519,36 +546,110 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div className="space-y-3 pt-2">
-        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Log Aktivitas Terbaru</h3>
+      <div className="space-y-2 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-1">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Log Aktivitas Terbaru</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setShowSearch(s => !s); setSearchQuery(''); setCurrentPage(1); }}
+              title="Cari Simaksi"
+              className={`p-1.5 rounded-xl transition-all ${showSearch ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}
+            >
+              <Search className="w-3.5 h-3.5" />
+            </button>
+            {showSearch && (
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                placeholder="Nomor Simaksi"
+                autoFocus
+                className="w-40 text-xs font-medium text-slate-700 px-3 py-1.5 bg-white border border-slate-200 rounded-xl outline-none focus:border-emerald-400 transition-all placeholder:text-slate-300"
+              />
+            )}
+          </div>
+        </div>
+
         <div className="bg-white rounded-3xl border border-slate-100 divide-y divide-slate-50 overflow-hidden shadow-sm">
-          {recentScans.length > 0 ? recentScans.map(log => (
-            <div key={log.id} className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
+          {paginatedScans.length > 0 ? paginatedScans.map(log => {
+            const isCheckout = log.validationStatus === 'checkout' || log.type === 'CHECK_OUT';
+            return (
+            <div key={`${log.id}-${log.timestamp}`} className={`p-4 flex items-center justify-between transition-colors ${
+              isCheckout ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/50'
+            }`}>
               <div className="flex items-center gap-4">
-                <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${
-                  log.type === 'CHECK_IN' ? 'bg-emerald-500' : (log.type === 'CHECK_OUT' ? 'bg-rose-500' : 'bg-sky-500')
+                <div className={`w-2.5 h-2.5 rounded-full shadow-sm shrink-0 ${
+                  isCheckout ? 'bg-rose-500' : (log.type === 'CHECK_IN' ? 'bg-emerald-500' : 'bg-sky-500')
                 }`}></div>
                 <div>
-                  <div className="text-sm font-black text-slate-700">{getHikerName(log.ticketId)}</div>
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">
-                    {log.ticketId} • {MOUNTAIN_POS[log.posId || 0]?.name || 'Lokasi Tidak Diketahui'}
+                  <div className={`text-sm font-black ${isCheckout ? 'text-rose-700' : 'text-slate-700'}`}>
+                    {log.kodeSimaksi
+                      ? `${log.kodeSimaksi} - ${log.ketuaName || 'Ketua'}`
+                      : (log.anggotaName || log.ticketId)}
+                  </div>
+                  <div className={`text-[10px] font-bold uppercase ${isCheckout ? 'text-rose-400' : 'text-slate-400'}`}>
+                    {isCheckout
+                      ? 'Lapor Kepulangan Pendaki'
+                      : `${log.anggotaName || 'Pendaki'} • ${MOUNTAIN_POS[log.posId || 0]?.name || 'Lokasi Tidak Diketahui'}`
+                    }
                   </div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-xs font-black text-slate-600">
+              <div className="text-right shrink-0 ml-2">
+                <div className={`text-xs font-black ${isCheckout ? 'text-rose-600' : 'text-slate-600'}`}>
                   {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
                 <div className={`text-[9px] font-black uppercase tracking-tighter ${
-                  log.type === 'CHECK_IN' ? 'text-emerald-500' : (log.type === 'CHECK_OUT' ? 'text-rose-500' : 'text-sky-500')
+                  isCheckout ? 'text-rose-500' : (log.type === 'CHECK_IN' ? 'text-emerald-500' : 'text-sky-500')
                 }`}>
-                  {(log.type || 'POST_CHECK').replace('_', ' ')}
+                  {isCheckout ? 'CHECK-OUT' : (log.type || 'POST_CHECK').replace('_', ' ')}
                 </div>
               </div>
             </div>
-          )) : (
+            );
+          }) : (
             <div className="p-10 text-center text-slate-300 text-xs font-bold uppercase tracking-widest italic">
-              Tidak ada aktivitas
+              {searchQuery ? 'Tidak ada hasil pencarian' : 'Tidak ada aktivitas'}
+            </div>
+          )}
+
+          {filteredScans.length > 0 && (
+            <div className="px-4 py-3 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider hidden sm:block mr-1">Tampilkan</span>
+                {[5, 10, 20, 30].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => { setItemsPerPage(n); setCurrentPage(1); }}
+                    className={`w-6 h-6 text-[9px] font-black rounded-lg transition-all ${
+                      itemsPerPage === n
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-slate-400 font-bold tabular-nums">
+                  {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, filteredScans.length)}/{filteredScans.length}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  className="w-6 h-6 bg-white border border-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="w-6 h-6 bg-white border border-slate-200 text-slate-500 rounded-lg flex items-center justify-center hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
         </div>

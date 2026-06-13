@@ -1,6 +1,7 @@
   import { openDB, IDBPDatabase } from 'idb';
   import { ScanLog, RegistrationRequest, SimaksiRequest } from '../types';
   import { createClient } from '@supabase/supabase-js';
+  import { MOUNTAIN_POS } from './mockData';
 
   console.log('🔵 db.ts loaded');
 
@@ -503,154 +504,57 @@
   // SYNC LOGIC FOR SCANS
   // --------------------------------------------------------------------
 
-  export async function trySyncScan(scan: any): Promise<boolean> {
+  // Sync scan dari antrian lokal ke tracking_history Supabase (dipakai saat kembali online)
+  async function trySyncToTrackingHistory(scan: any): Promise<boolean> {
     const supabase = getSupabaseClient();
-    console.log('[SYNC] 🔄 Attempting to sync scan ID:', scan.id, 'TicketID:', scan.ticketId, 'Online:', isOnline());
-    
-    if (!supabase || !isOnline()) {
-      console.log('[SYNC] ⏸️  Scan sync blocked - Supabase:', !!supabase, 'Online:', isOnline());
+    if (!supabase || !isOnline()) return false;
+
+    // Harus punya userId dan ticketId berformat UUID
+    if (!isValidUUID(scan.ticketId) || !isValidUUID(scan.userId)) {
+      console.warn('[SYNC] Skip: ticketId atau userId bukan UUID valid', scan.ticketId, scan.userId);
       return false;
     }
 
     try {
-      console.log('[SYNC] 📤 Sending scan to Supabase...');
-      
-      // Resolve ticketId: convert display format (SUMMITY-USER-2) to UUID
-      let resolvedTicketId = scan.ticketId;
-      console.log('[DEBUG] === TICKET ID RESOLUTION ===');
-      console.log('[DEBUG] scan.ticketId (raw):', scan.ticketId);
-      
-      // If ticketId is not already a UUID, look it up in usersList
-      if (!isValidUUID(resolvedTicketId)) {
-        const searchDisplay = String(scan.ticketId || '').toUpperCase();
-        console.log('[DEBUG] searchDisplay (after toUpperCase):', searchDisplay);
-        
-        const usersListStr = localStorage.getItem('summity_users_list');
-        const usersList: any[] = usersListStr ? JSON.parse(usersListStr) : [];
-        console.log('[DEBUG] usersList from localStorage:', JSON.stringify(usersList, null, 2));
-        
-        let found = usersList.find(
-          u =>
-            (u.displayId &&
-              u.displayId.toUpperCase() === searchDisplay) ||
-            (u.id_pendaki &&
-              u.id_pendaki.toUpperCase() === searchDisplay) ||
-            (u.idPendaki &&
-              u.idPendaki.toUpperCase() === searchDisplay) ||
-            (u.id &&
-              String(u.id).toUpperCase() === searchDisplay)
-        );
-        
-        console.log('[DEBUG] found user:', found);
-        
-        if (found) {
-          console.log('[DEBUG] ✅ Resolved ticketId to UUID:', found.id);
-          resolvedTicketId = found.id;
-        } else {
-          console.warn('[DEBUG] ⚠️ User not found in list, generating new UUID for display:', searchDisplay);
-          // Generate new UUID and store mapping
-          const newInternalId = generateUUID();
-          const newEntry = { id: newInternalId, displayId: searchDisplay };
-          usersList.push(newEntry);
-          localStorage.setItem('summity_users_list', JSON.stringify(usersList));
-          console.log('[DEBUG] Created new user mapping:', newEntry);
-          resolvedTicketId = newInternalId;
-        }
-      }
-      console.log('[DEBUG] === END TICKET ID RESOLUTION ===');
-      
-      // ENSURE TICKET EXISTS: Before inserting scan, make sure ticket exists in tickets table
-      try {
-        console.log('[DEBUG] === ENSURE TICKET EXISTS ===');
-        console.log('[DEBUG] Checking if ticket exists in Supabase...');
-        const { data: existingTicket } = await supabase
-          .from('tickets')
-          .select('id')
-          .eq('id', resolvedTicketId)
-          .maybeSingle();
-        
-        if (!existingTicket) {
-          console.log('[DEBUG] Ticket not found - creating minimal ticket record...');
-          
-          // Create minimal ticket with required fields
-          const ticketPayload = toSnakeCaseObject({
-            id: resolvedTicketId,
-            mountainName: 'Unknown', // Fallback name
-            date: new Date().toISOString().split('T')[0], // Today's date
-            status: 'PENDING',
-          });
-          
-          console.log('[DEBUG] Creating ticket with payload:', JSON.stringify(ticketPayload, null, 2));
-          
-          const { error: ticketError } = await supabase
-            .from('tickets')
-            .insert(ticketPayload);
-          
-          if (ticketError) {
-            console.warn('[DEBUG] ❌ Failed to create ticket:', ticketError);
-            console.warn('[DEBUG] Scan sync will be skipped to avoid FK violation');
-            return false;
-          } else {
-            console.log('[DEBUG] ✅ Ticket created successfully');
-          }
-        } else {
-          console.log('[DEBUG] ✅ Ticket already exists');
-        }
-        console.log('[DEBUG] === END ENSURE TICKET EXISTS ===');
-      } catch (e) {
-        console.warn('[DEBUG] Error ensuring ticket exists:', e);
-        return false;
-      }
-      
-      // Convert camelCase to snake_case for Supabase
-      const payload = toSnakeCaseObject({
-        id: scan.id,
-        ticketId: resolvedTicketId, // Use resolved UUID
-        timestamp: scan.timestamp,
-        type: scan.type,
-        posId: scan.posId,
+      // pos.id is exactly 0-10, matching scan.posId (posIndex) directly
+      const { error } = await supabase.from('tracking_history').insert({
+        ticket_id: scan.ticketId,
+        user_id: scan.userId,
+        pos_id: scan.posId,
+        scanned_at: scan.timestamp,
+        device_id: scan.deviceId?.substring(0, 255) || null,
+        is_offline: true,
+        synced_at: new Date().toISOString(),
+        validation_status: 'valid',
+        created_by: scan.userId,
       });
-      
-      console.log('[SYNC] 📋 Converted payload (snake_case):', JSON.stringify(payload, null, 2));
 
-      const { error } = await supabase
-        .from('scan_logs')
-        .upsert(payload);
-
-      if (!error) {
-        console.log('[SYNC] ✅ Scan synced to Supabase successfully!');
-        const db = await initDB();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        const savedScan = await store.get(scan.id);
-        if (savedScan) {
-          savedScan.synced = true;
-          await store.put(savedScan);
-          console.log('[SYNC] 💾 Marked scan as synced in LocalDB');
-        }
-        await tx.done;
-        return true;
-      } else {
-        console.warn('[SYNC] ❌ Supabase scan error:', error, '- will retry offline');
+      if (error) {
+        console.warn('[SYNC] tracking_history sync error:', error);
         return false;
       }
-    } catch (err) {
-      console.warn('[SYNC] ⚠️  Failed to sync scan:', err);
+
+      // Tandai synced di IndexedDB lokal
+      const db = await initDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const saved = await store.get(scan.id);
+      if (saved) { saved.synced = true; await store.put(saved); }
+      await tx.done;
+      console.log('[SYNC] ✅ Scan synced ke tracking_history');
+      return true;
+    } catch (e) {
+      console.warn('[SYNC] Exception sync ke tracking_history:', e);
       return false;
     }
   }
 
-  export async function saveScan(scan: Omit<ScanLog, 'id'>) {
+  // Simpan scan ke antrian lokal IndexedDB (offline queue, tidak sync langsung)
+  export async function saveScan(scan: Omit<ScanLog, 'id'> & { userId?: string; deviceId?: string; synced?: boolean }) {
     const db = await initDB();
-    console.log('[SAVE] 💾 Saving scan to LocalDB:', scan.ticketId, 'Type:', scan.type, 'PosID:', scan.posId);
-    
-    const localId = await db.add(STORE_NAME, { ...scan, synced: false });
-    console.log('[SAVE] ✅ Scan saved locally with ID:', localId);
-    
-    console.log('[SAVE] 🔄 Attempting immediate Supabase sync...');
-    const scanWithId = { ...scan, id: localId, synced: false };
-    const syncResult = await trySyncScan(scanWithId);
-    console.log('[SAVE] Scan sync attempt result:', syncResult ? '✅ Success' : '⏸️  Offline/Failed');
+    // Respect the passed synced value — callers set synced:true for cached-online records
+    // (syncAllUnsyncedData only processes synced:false records, so true = no re-sync)
+    const localId = await db.add(STORE_NAME, { ...scan });
     return localId;
   }
 
@@ -726,17 +630,16 @@
         }
       }
 
-      // Sync scans
+      // Sync scans (antrian offline) ke tracking_history
       const scans = await db.getAll(STORE_NAME);
-      console.log('[SYNC-ALL] 📊 Found', scans.length, 'scans total');
-      const unsyncedScans = scans.filter(s => !s.synced);
-      console.log('[SYNC-ALL] 📊 Unsynced scans:', unsyncedScans.length);
+      const unsyncedScans = scans.filter((s: any) => !s.synced);
+      console.log('[SYNC-ALL] 📊 Unsynced tracking queue:', unsyncedScans.length);
 
       for (const scan of unsyncedScans) {
-        const success = await trySyncScan(scan);
+        const success = await trySyncToTrackingHistory(scan);
         if (success) {
           scansSynced++;
-          console.log('[SYNC-ALL] ✅ Scan', scan.id, 'synced');
+          console.log('[SYNC-ALL] ✅ Scan', scan.id, 'synced ke tracking_history');
         }
       }
 
@@ -1012,6 +915,8 @@
       }));
   }
 
+  const SIMAKSI_CACHE_PREFIX = 'summity_simaksi_';
+
   export async function getUserSimaksi(userId: string): Promise<any[]> {
     const supabase = getSupabaseClient();
 
@@ -1069,7 +974,7 @@
         membersMap[a.simaksi_id].push({ id: a.users?.id_pendaki || a.user_id, name: a.users?.name || 'Anggota' });
       });
 
-      return combined
+      const result = combined
         .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .map((s: any) => ({
           simaksiId: s.id,
@@ -1085,9 +990,19 @@
           createdAt: s.created_at,
           qrCode: `SUMMITY-SIMAKSI-${s.id}`,
         }));
+
+      // Cache hasil Supabase agar offline bisa baca status terbaru (approved, dll)
+      localStorage.setItem(SIMAKSI_CACHE_PREFIX + userId, JSON.stringify(result));
+      return result;
     }
 
-    // Offline: IndexedDB
+    // Offline: coba localStorage cache dulu (status terbaru dari Supabase)
+    try {
+      const cached = localStorage.getItem(SIMAKSI_CACHE_PREFIX + userId);
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+
+    // Final fallback: IndexedDB (untuk simaksi lokal yang belum tersync)
     const db = await initDB();
     const all = await db.getAll(SIMAKSI_STORE) as any[];
     return all
@@ -1122,8 +1037,60 @@
         .from('simaksi')
         .update({ status: 'approved', kode_simaksi: kodeSimaksi, approved_at: now.toISOString() })
         .eq('id', simaksiId);
-      if (error) console.warn('[SIMAKSI-ADMIN] Gagal approve:', JSON.stringify(error));
-      else ok = true;
+      if (error) {
+        console.warn('[SIMAKSI-ADMIN] Gagal approve:', JSON.stringify(error));
+      } else {
+        ok = true;
+
+        // Fetch simaksi data + anggota untuk buat tiket masing-masing
+        const [simaksiRes, anggotaRes] = await Promise.all([
+          supabase
+            .from('simaksi')
+            .select('ketua_user_id, gunung_id, tanggal_naik, tanggal_turun')
+            .eq('id', simaksiId)
+            .single(),
+          supabase
+            .from('simaksi_anggota')
+            .select('user_id')
+            .eq('simaksi_id', simaksiId),
+        ]);
+
+        const simaksiData = simaksiRes.data;
+        if (simaksiData) {
+          // Nama gunung
+          let mountainName = 'Gunung Slamet';
+          const { data: gunungData } = await supabase
+            .from('gunung')
+            .select('nama')
+            .eq('id', simaksiData.gunung_id)
+            .maybeSingle();
+          if (gunungData?.nama) mountainName = gunungData.nama;
+
+          // Semua anggota + ketua
+          const memberIds: string[] = [
+            simaksiData.ketua_user_id,
+            ...((anggotaRes.data || []).map((a: any) => a.user_id)),
+          ];
+
+          for (const userId of memberIds) {
+            const ticketId = generateUUID();
+            const { error: ticketErr } = await supabase.from('tickets').insert({
+              id: ticketId,
+              user_id: userId,
+              mountain_name: mountainName,
+              date: simaksiData.tanggal_naik,
+              end_date: simaksiData.tanggal_turun,
+              status: 'ACTIVE',
+              qr_code: `SUMMITY-TICKET-${ticketId}`,
+            });
+            if (ticketErr) {
+              console.warn('[TICKET] Gagal buat tiket untuk user', userId, ':', ticketErr);
+            } else {
+              console.log('[TICKET] ✅ Tiket dibuat untuk user:', userId, 'ticketId:', ticketId);
+            }
+          }
+        }
+      }
     }
 
     const targetLocalId = localId ?? simaksiId;
@@ -1180,14 +1147,84 @@
     let kodeSimaksi: string | null = null;
 
     if (supabase && isOnline()) {
-      const { data, error } = await supabase
+      // Try 'complete' first; if constraint rejects it, fall back to 'checkout'
+      let { data, error } = await supabase
         .from('simaksi')
         .update({ status: 'complete' })
         .eq('id', simaksiId)
         .select('kode_simaksi')
         .maybeSingle();
+
+      if (error?.code === '23514') {
+        // Check constraint violation — DB constraint belum include 'complete'.
+        // Fallback ke 'checkout' sampai migration dijalankan di Supabase:
+        //   ALTER TABLE simaksi DROP CONSTRAINT chk_status_simaksi;
+        //   ALTER TABLE simaksi ADD CONSTRAINT chk_status_simaksi
+        //     CHECK (status IN ('draft','pending','approved','rejected','checkin','checkout','complete'));
+        console.warn('[SIMAKSI] Constraint tolak "complete" — fallback ke "checkout". Jalankan migration SQL untuk fix permanen.');
+        const fallback = await supabase
+          .from('simaksi')
+          .update({ status: 'checkout' })
+          .eq('id', simaksiId)
+          .select('kode_simaksi')
+          .maybeSingle();
+        error = fallback.error;
+        data = fallback.data;
+      }
+
       if (error) console.warn('[SIMAKSI] Gagal complete:', JSON.stringify(error));
-      else { ok = true; kodeSimaksi = data?.kode_simaksi ?? null; }
+      else {
+        ok = true;
+        kodeSimaksi = data?.kode_simaksi ?? null;
+
+        // Insert tracking_history checkout record untuk setiap anggota
+        try {
+          const [simaksiRes, anggotaRes] = await Promise.all([
+            supabase
+              .from('simaksi')
+              .select('ketua_user_id')
+              .eq('id', simaksiId)
+              .single(),
+            supabase
+              .from('simaksi_anggota')
+              .select('user_id')
+              .eq('simaksi_id', simaksiId),
+          ]);
+
+          const memberIds: string[] = [
+            ...(simaksiRes.data?.ketua_user_id ? [simaksiRes.data.ketua_user_id] : []),
+            ...((anggotaRes.data || []).map((a: any) => a.user_id)),
+          ];
+
+          const scannedAt = new Date().toISOString();
+          for (const userId of memberIds) {
+            const { data: ticket } = await supabase
+              .from('tickets')
+              .select('id')
+              .eq('user_id', userId)
+              .in('status', ['ACTIVE', 'APPROVED', 'PENDING'])
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (ticket) {
+              await supabase.from('tracking_history').insert({
+                ticket_id: ticket.id,
+                user_id: userId,
+                pos_id: 0,
+                scanned_at: scannedAt,
+                is_offline: false,
+                synced_at: scannedAt,
+                validation_status: 'checkout',
+                notes: 'Lapor kepulangan via admin scanner',
+              });
+            }
+          }
+          console.log('[SIMAKSI] ✅ Checkout tracking_history inserted untuk', memberIds.length, 'anggota');
+        } catch (e) {
+          console.warn('[SIMAKSI] Gagal insert checkout tracking_history:', e);
+        }
+      }
     }
 
     try {
@@ -1222,6 +1259,233 @@
   export async function getAllSimaksi() {
     const db = await initDB();
     return db.getAll(SIMAKSI_STORE);
+  }
+
+  // --------------------------------------------------------------------
+  // POS ID HELPERS
+  // pos.id is exactly 0-10, matching MOUNTAIN_POS index directly
+  // --------------------------------------------------------------------
+
+  export function getPosIndexByUUID(posId: string | number): number {
+    const n = Number(posId);
+    return isNaN(n) ? 0 : n;
+  }
+
+  // --------------------------------------------------------------------
+  // TICKET HELPERS (individual per-user tickets)
+  // --------------------------------------------------------------------
+
+  const TICKET_CACHE_PREFIX = 'summity_ticket_';
+
+  export async function getUserActiveTicket(userId: string): Promise<any | null> {
+    const supabase = getSupabaseClient();
+    if (supabase && isOnline()) {
+      const { data, error } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('user_id', userId)
+        .in('status', ['ACTIVE', 'APPROVED', 'PENDING'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!error && data) {
+        localStorage.setItem(TICKET_CACHE_PREFIX + userId, JSON.stringify(data));
+        return data;
+      }
+      if (!error && !data) {
+        // No active ticket online — clear stale cache
+        localStorage.removeItem(TICKET_CACHE_PREFIX + userId);
+      }
+      return null;
+    }
+    // Offline: serve from cache
+    try {
+      const cached = localStorage.getItem(TICKET_CACHE_PREFIX + userId);
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+    return null;
+  }
+
+  // --------------------------------------------------------------------
+  // TRACKING HISTORY
+  // --------------------------------------------------------------------
+
+  export async function insertTrackingHistory(params: {
+    ticketId: string;
+    userId: string;
+    posIndex: number;
+    scannedAt: string;
+    deviceId?: string;
+    isOffline?: boolean;
+  }): Promise<boolean> {
+    const supabase = getSupabaseClient();
+
+    const queueOffline = () =>
+      saveScan({
+        ticketId: params.ticketId,
+        userId: params.userId,
+        deviceId: params.deviceId,
+        timestamp: params.scannedAt,
+        type: 'POST_CHECK',
+        posId: params.posIndex,
+        synced: false,
+      });
+
+    // Offline: simpan ke IndexedDB saja; syncAllUnsyncedData akan insert 1 record saat online
+    if (!supabase || !isOnline()) {
+      console.log('[TRACKING] Offline — masuk antrian lokal');
+      await queueOffline();
+      return false;
+    }
+
+    // Online: insert langsung ke Supabase — 1 scan = 1 record, tidak ada duplikat
+    try {
+      const { error } = await supabase.from('tracking_history').insert({
+        ticket_id: params.ticketId,
+        user_id: params.userId,
+        pos_id: params.posIndex,
+        scanned_at: params.scannedAt,
+        device_id: params.deviceId?.substring(0, 255) || null,
+        is_offline: false,
+        synced_at: new Date().toISOString(),
+        validation_status: 'valid',
+        created_by: params.userId,
+      });
+
+      if (error) {
+        console.warn('[TRACKING] Insert error:', error, '— masuk antrian');
+        await queueOffline();
+        return false;
+      }
+
+      // Simpan lokal (synced:true) agar fallback offline tetap tampil data
+      await saveScan({
+        ticketId: params.ticketId,
+        userId: params.userId,
+        deviceId: params.deviceId,
+        timestamp: params.scannedAt,
+        type: 'POST_CHECK',
+        posId: params.posIndex,
+        synced: true,
+      });
+      console.log('[TRACKING] ✅ Inserted to tracking_history (online)');
+      return true;
+    } catch (e) {
+      console.warn('[TRACKING] Exception:', e);
+      await queueOffline();
+      return false;
+    }
+  }
+
+  // Semua tracking history — dipakai admin dashboard untuk Sebaran Pendaki & Log Aktivitas
+  export async function getAllTrackingHistory(): Promise<any[]> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      const { data, error } = await supabase
+        .from('tracking_history')
+        .select('id, ticket_id, user_id, pos_id, scanned_at, validation_status')
+        .order('scanned_at', { ascending: false })
+        .limit(50);
+
+      if (!error && data && data.length > 0) {
+        const userIds = [...new Set(data.map((h: any) => h.user_id).filter(Boolean))] as string[];
+
+        // Parallel: anggota names + simaksi membership + simaksi where user is ketua
+        const [usersResult, membershipResult, ketuaSimaksiResult] = await Promise.all([
+          supabase.from('users').select('id, name').in('id', userIds),
+          supabase.from('simaksi_anggota').select('user_id, simaksi_id').in('user_id', userIds),
+          supabase.from('simaksi').select('id, kode_simaksi, ketua_user_id').in('ketua_user_id', userIds),
+        ]);
+
+        const userNameMap: Record<string, string> = {};
+        (usersResult.data || []).forEach((u: any) => { userNameMap[u.id] = u.name || 'Pendaki'; });
+
+        // Fetch simaksi details for anggota's simaksi_ids
+        const anggotaSimaksiIds = [...new Set((membershipResult.data || []).map((a: any) => a.simaksi_id))];
+        let anggotaSimaksiRows: any[] = [];
+        if (anggotaSimaksiIds.length > 0) {
+          const { data: asr } = await supabase
+            .from('simaksi')
+            .select('id, kode_simaksi, ketua_user_id')
+            .in('id', anggotaSimaksiIds);
+          anggotaSimaksiRows = asr || [];
+        }
+
+        // Fetch names of ketua not already in userNameMap
+        const allSimaksiRows = [...anggotaSimaksiRows, ...(ketuaSimaksiResult.data || [])];
+        const unknownKetuaIds = [...new Set(
+          allSimaksiRows.map((s: any) => s.ketua_user_id).filter((id: string) => id && !userNameMap[id])
+        )];
+        if (unknownKetuaIds.length > 0) {
+          const { data: ketuaUsers } = await supabase.from('users').select('id, name').in('id', unknownKetuaIds);
+          (ketuaUsers || []).forEach((u: any) => { userNameMap[u.id] = u.name || 'Ketua'; });
+        }
+
+        // user → simaksi info lookup
+        const userSimaksiLookup: Record<string, { kodeSimaksi: string; ketuaName: string }> = {};
+        (membershipResult.data || []).forEach((a: any) => {
+          const sim = anggotaSimaksiRows.find((s: any) => s.id === a.simaksi_id);
+          if (sim && !userSimaksiLookup[a.user_id]) {
+            userSimaksiLookup[a.user_id] = {
+              kodeSimaksi: sim.kode_simaksi || `SMK-${sim.id}`,
+              ketuaName: userNameMap[sim.ketua_user_id] || 'Ketua',
+            };
+          }
+        });
+        (ketuaSimaksiResult.data || []).forEach((s: any) => {
+          if (s.ketua_user_id && !userSimaksiLookup[s.ketua_user_id]) {
+            userSimaksiLookup[s.ketua_user_id] = {
+              kodeSimaksi: s.kode_simaksi || `SMK-${s.id}`,
+              ketuaName: userNameMap[s.ketua_user_id] || 'Ketua',
+            };
+          }
+        });
+
+        return data.map((h: any) => ({
+          id: h.id,
+          ticketId: h.ticket_id,
+          userId: h.user_id,
+          anggotaName: userNameMap[h.user_id] || 'Pendaki',
+          kodeSimaksi: userSimaksiLookup[h.user_id]?.kodeSimaksi,
+          ketuaName: userSimaksiLookup[h.user_id]?.ketuaName,
+          timestamp: h.scanned_at,
+          type: h.validation_status === 'checkout' ? ('CHECK_OUT' as const) : ('POST_CHECK' as const),
+          posId: getPosIndexByUUID(h.pos_id),
+          validationStatus: h.validation_status,
+          synced: true,
+        }));
+      }
+    }
+
+    return getAllScans();
+  }
+
+  export async function getTrackingHistoryByTicket(ticketId: string): Promise<any[]> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      const { data } = await supabase
+        .from('tracking_history')
+        .select('*, pos(*)')
+        .eq('ticket_id', ticketId)
+        .order('scanned_at', { ascending: true });
+
+      if (data && data.length > 0) {
+        return data.map((h: any) => ({
+          id: h.id,
+          ticketId: h.ticket_id,
+          timestamp: h.scanned_at,
+          type: 'POST_CHECK' as const,
+          posId: getPosIndexByUUID(h.pos_id),
+          synced: true,
+        }));
+      }
+    }
+
+    // Fallback: local scan_logs filtered by ticketId
+    const scans = await getAllScans();
+    return scans.filter(s => s.ticketId === ticketId);
   }
 
   // Autostart sync listeners on runtime environments

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getAllScans, getAllRegistrations, getUserActiveSimaksi } from '../../lib/db';
+import { getAllTrackingHistory, getAllRegistrations, getUserActiveSimaksi } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog, RegistrationRequest } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -38,7 +38,7 @@ export default function UserDashboard() {
   
   useEffect(() => {
     const fetchData = async () => {
-      const scans = (await getAllScans()) as ScanLog[];
+      const scans = (await getAllTrackingHistory()) as ScanLog[];
       const regs = await getAllRegistrations();
       
       const userRegs = regs.filter(r => 
