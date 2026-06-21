@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { saveRegistration } from '../../lib/db';
 import { getSupabaseClient } from '../../lib/db';
-import { 
-  Mountain, 
-  User, 
-  ArrowRight, 
-  Phone, 
-  HeartHandshake, 
+import {
+  Mountain,
+  User,
+  ArrowRight,
+  Phone,
+  HeartHandshake,
   ChevronLeft,
+  ChevronDown,
   AlertCircle,
   Sparkles,
   Lock,
@@ -66,6 +67,79 @@ export default function Register() {
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Cascading region dropdowns
+  type RegionItem = { id: string; nama: string };
+  const [provinceOptions, setProvinceOptions] = useState<RegionItem[]>([]);
+  const [regencyOptions, setRegencyOptions]   = useState<RegionItem[]>([]);
+  const [districtOptions, setDistrictOptions] = useState<RegionItem[]>([]);
+  const [villageOptions, setVillageOptions]   = useState<RegionItem[]>([]);
+  const [selectedProvinceId, setSelectedProvinceId] = useState('');
+  const [selectedRegencyId, setSelectedRegencyId]   = useState('');
+  const [selectedDistrictId, setSelectedDistrictId] = useState('');
+  const [regionLoading, setRegionLoading] = useState<'province'|'regency'|'district'|'village'|null>(null);
+  const [regionError, setRegionError] = useState('');
+
+  // Load provinces when user enters the address tab
+  useEffect(() => {
+    if (activeTab === 'address' && provinceOptions.length === 0) {
+      setRegionLoading('province');
+      setRegionError('');
+      fetch('https://ibnux.github.io/data-indonesia/provinsi.json')
+        .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+        .then((data: RegionItem[]) => setProvinceOptions(data))
+        .catch(() => setRegionError('Gagal memuat data wilayah. Periksa koneksi internet Anda.'))
+        .finally(() => setRegionLoading(null));
+    }
+  }, [activeTab, provinceOptions.length]);
+
+  const handleProvinceChange = (id: string, nama: string) => {
+    setSelectedProvinceId(id);
+    setSelectedRegencyId('');
+    setSelectedDistrictId('');
+    setRegencyOptions([]);
+    setDistrictOptions([]);
+    setVillageOptions([]);
+    setFormData(prev => ({ ...prev, province: nama, city: '', district: '', subdistrict: '' }));
+    setFormErrors(prev => ({ ...prev, province: '' }));
+    if (!id) return;
+    setRegionLoading('regency');
+    fetch(`https://ibnux.github.io/data-indonesia/kabupaten/${id}.json`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data: RegionItem[]) => setRegencyOptions(data))
+      .catch(() => {})
+      .finally(() => setRegionLoading(null));
+  };
+
+  const handleRegencyChange = (id: string, nama: string) => {
+    setSelectedRegencyId(id);
+    setSelectedDistrictId('');
+    setDistrictOptions([]);
+    setVillageOptions([]);
+    setFormData(prev => ({ ...prev, city: nama, district: '', subdistrict: '' }));
+    setFormErrors(prev => ({ ...prev, city: '' }));
+    if (!id) return;
+    setRegionLoading('district');
+    fetch(`https://ibnux.github.io/data-indonesia/kecamatan/${id}.json`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data: RegionItem[]) => setDistrictOptions(data))
+      .catch(() => {})
+      .finally(() => setRegionLoading(null));
+  };
+
+  const handleDistrictChange = (id: string, nama: string) => {
+    setSelectedDistrictId(id);
+    setVillageOptions([]);
+    setFormData(prev => ({ ...prev, district: nama, subdistrict: '' }));
+    setFormErrors(prev => ({ ...prev, district: '' }));
+    if (!id) return;
+    setRegionLoading('village');
+    fetch(`https://ibnux.github.io/data-indonesia/kelurahan/${id}.json`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data: RegionItem[]) => setVillageOptions(data))
+      .catch(() => {})
+      .finally(() => setRegionLoading(null));
+  };
 
   const validateRegisterStep = (tab: 'account' | 'personal' | 'address') => {
     const errors: Record<string, string> = {};
@@ -950,54 +1024,127 @@ export default function Register() {
                       <span className="bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border border-emerald-100/30">Step 3 dari 3</span>
                     </div>
 
+                    {regionError && (
+                      <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex items-center gap-2 text-amber-700 text-xs font-semibold">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{regionError}</span>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      
+
+                      {/* Provinsi */}
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block font-bold">Provinsi</label>
-                        <input 
-                          type="text"
-                          required
-                          value={formData.province}
-                          onChange={(e) => setFormData({...formData, province: e.target.value})}
-                          placeholder="Jawa Tengah"
-                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white"
-                        />
+                        <div className="relative">
+                          <select
+                            value={selectedProvinceId}
+                            onChange={(e) => {
+                              const opt = provinceOptions.find(p => p.id === e.target.value);
+                              handleProvinceChange(e.target.value, opt?.nama ?? '');
+                            }}
+                            disabled={regionLoading === 'province'}
+                            className={`w-full bg-slate-50 border ${formErrors.province ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl py-3.5 px-4 pr-9 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 appearance-none disabled:opacity-60`}
+                          >
+                            <option value="">{regionLoading === 'province' ? 'Memuat...' : '-- Pilih Provinsi --'}</option>
+                            {provinceOptions.map(p => (
+                              <option key={p.id} value={p.id}>{p.nama}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        </div>
+                        {formErrors.province && (
+                          <p className="text-[9px] text-rose-500 font-bold ml-1 flex items-center gap-1">
+                            <AlertCircle className="w-3" /> {formErrors.province}
+                          </p>
+                        )}
                       </div>
 
+                      {/* Kota / Kabupaten */}
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block font-bold">Kota / Kabupaten</label>
-                        <input 
-                          type="text"
-                          required
-                          value={formData.city}
-                          onChange={(e) => setFormData({...formData, city: e.target.value})}
-                          placeholder="Purbalingga"
-                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white"
-                        />
+                        <div className="relative">
+                          <select
+                            value={selectedRegencyId}
+                            onChange={(e) => {
+                              const opt = regencyOptions.find(r => r.id === e.target.value);
+                              handleRegencyChange(e.target.value, opt?.nama ?? '');
+                            }}
+                            disabled={!selectedProvinceId || regionLoading === 'regency'}
+                            className={`w-full bg-slate-50 border ${formErrors.city ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl py-3.5 px-4 pr-9 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 appearance-none disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            <option value="">
+                              {!selectedProvinceId ? '-- Pilih provinsi dulu --' : regionLoading === 'regency' ? 'Memuat...' : '-- Pilih Kab / Kota --'}
+                            </option>
+                            {regencyOptions.map(r => (
+                              <option key={r.id} value={r.id}>{r.nama}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        </div>
+                        {formErrors.city && (
+                          <p className="text-[9px] text-rose-500 font-bold ml-1 flex items-center gap-1">
+                            <AlertCircle className="w-3" /> {formErrors.city}
+                          </p>
+                        )}
                       </div>
 
+                      {/* Kecamatan */}
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block font-bold">Kecamatan</label>
-                        <input 
-                          type="text"
-                          required
-                          value={formData.district}
-                          onChange={(e) => setFormData({...formData, district: e.target.value})}
-                          placeholder="Kertanegara"
-                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white"
-                        />
+                        <div className="relative">
+                          <select
+                            value={selectedDistrictId}
+                            onChange={(e) => {
+                              const opt = districtOptions.find(d => d.id === e.target.value);
+                              handleDistrictChange(e.target.value, opt?.nama ?? '');
+                            }}
+                            disabled={!selectedRegencyId || regionLoading === 'district'}
+                            className={`w-full bg-slate-50 border ${formErrors.district ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl py-3.5 px-4 pr-9 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 appearance-none disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            <option value="">
+                              {!selectedRegencyId ? '-- Pilih kab/kota dulu --' : regionLoading === 'district' ? 'Memuat...' : '-- Pilih Kecamatan --'}
+                            </option>
+                            {districtOptions.map(d => (
+                              <option key={d.id} value={d.id}>{d.nama}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        </div>
+                        {formErrors.district && (
+                          <p className="text-[9px] text-rose-500 font-bold ml-1 flex items-center gap-1">
+                            <AlertCircle className="w-3" /> {formErrors.district}
+                          </p>
+                        )}
                       </div>
 
+                      {/* Kelurahan / Desa */}
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block font-bold">Kelurahan / Desa</label>
-                        <input 
-                          type="text"
-                          required
-                          value={formData.subdistrict}
-                          onChange={(e) => setFormData({...formData, subdistrict: e.target.value})}
-                          placeholder="Kasih"
-                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white"
-                        />
+                        <div className="relative">
+                          <select
+                            value={formData.subdistrict}
+                            onChange={(e) => {
+                              setFormData(prev => ({ ...prev, subdistrict: e.target.value }));
+                              setFormErrors(prev => ({ ...prev, subdistrict: '' }));
+                            }}
+                            disabled={!selectedDistrictId || regionLoading === 'village'}
+                            className={`w-full bg-slate-50 border ${formErrors.subdistrict ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl py-3.5 px-4 pr-9 text-xs font-bold text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 appearance-none disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            <option value="">
+                              {!selectedDistrictId ? '-- Pilih kecamatan dulu --' : regionLoading === 'village' ? 'Memuat...' : '-- Pilih Kelurahan / Desa --'}
+                            </option>
+                            {villageOptions.map(v => (
+                              <option key={v.id} value={v.nama}>{v.nama}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        </div>
+                        {formErrors.subdistrict && (
+                          <p className="text-[9px] text-rose-500 font-bold ml-1 flex items-center gap-1">
+                            <AlertCircle className="w-3" /> {formErrors.subdistrict}
+                          </p>
+                        )}
                       </div>
 
                     </div>
