@@ -515,45 +515,55 @@ export default function Register() {
   }
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto pt-10 sm:pt-16 pb-12 px-4 sm:px-6">
-      
-      {/* Header section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2 border-b border-slate-100">
-        <div>
-          <button 
+    <div className="min-h-screen bg-slate-50">
+
+      {/* BLUE HEADER BANNER */}
+      <div className="bg-gradient-to-br from-blue-700 via-blue-800 to-blue-900 relative overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-20 -right-20 w-72 h-72 bg-white/5 rounded-full" />
+          <div className="absolute top-8 right-1/3 w-24 h-24 bg-white/5 rounded-full" />
+          <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-white/5 rounded-full" />
+        </div>
+
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-10 sm:pt-12 pb-28">
+          <button
             type="button"
             onClick={() => navigate('/')}
-            className="group flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-800 transition-colors mb-3"
+            className="group flex items-center gap-2 text-[10px] font-black text-blue-200 uppercase tracking-widest hover:text-white transition-colors mb-6"
           >
-            <ChevronLeft className="w-4 h-4 text-emerald-500 group-hover:-translate-x-1 transition-transform" />
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             Kembali ke Beranda
           </button>
-          
-          <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-tr from-emerald-500 to-teal-600 p-2.5 rounded-2xl text-white shadow-lg shadow-emerald-250">
-              <Mountain className="w-7 h-7" />
+
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="bg-white/15 border border-white/10 p-3 rounded-2xl shadow-lg backdrop-blur-sm">
+                <Mountain className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight italic uppercase leading-none">
+                  REGISTRASI PENDAKI
+                </h2>
+                <p className="text-blue-200/80 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.25em] mt-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Slamet Climbing Safety System — Pendaftaran Akun
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl sm:text-4xl font-black text-slate-800 tracking-tight italic uppercase leading-none">
-                REGISTRASI PENDAKI
-              </h2>
-              <p className="text-slate-400 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.25em] mt-1.5 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-                Slamet Climbing Safety System - Pendaftaran Akun
-              </p>
-            </div>
+
+            <button
+              onClick={() => navigate('/login')}
+              className="self-start sm:self-auto text-[10px] font-black text-white uppercase tracking-widest px-5 py-3.5 bg-white/10 hover:bg-white/20 rounded-2xl border border-white/20 transition-all active:scale-95 shrink-0"
+            >
+              Sudah Punya Akun? Masuk
+            </button>
           </div>
         </div>
-        
-        <button 
-          onClick={() => navigate('/login')}
-          className="self-start md:self-auto text-[10px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-widest px-5 py-3.5 bg-emerald-50 hover:bg-emerald-100 rounded-2xl border border-emerald-200 transition-all shadow-sm active:scale-95"
-        >
-          Sudah Punya Akun? Masuk
-        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      {/* CONTENT — pulled up to overlap the blue banner */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 -mt-16 pb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* LEFT COLUMN: THE STEPPER BAR & FORM */}
         <div className="lg:col-span-7 space-y-6">
@@ -1286,6 +1296,7 @@ export default function Register() {
 
       </div>
 
+      </div>
     </div>
   );
 }
