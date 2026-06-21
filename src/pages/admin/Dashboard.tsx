@@ -18,6 +18,9 @@ export default function AdminDashboard() {
   const [selectedSimaksi, setSelectedSimaksi] = useState<any | null>(null);
   const [isLoadingSimaksi, setIsLoadingSimaksi] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [pendingRejectItem, setPendingRejectItem] = useState<any | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
   
   // QR Code Simulator page states
   const [activeQrTab, setActiveQrTab] = useState<'pos' | 'ticket'>('pos');
@@ -106,8 +109,18 @@ export default function AdminDashboard() {
     await fetchData();
   };
 
-  const handleReject = async (item: any) => {
-    await rejectSimaksi(item.simaksiId, item.localId);
+  const openRejectModal = (item: any) => {
+    setPendingRejectItem(item);
+    setRejectReason('');
+    setShowRejectModal(true);
+  };
+
+  const handleReject = async () => {
+    if (!pendingRejectItem) return;
+    await rejectSimaksi(pendingRejectItem.simaksiId, pendingRejectItem.localId, rejectReason.trim() || undefined);
+    setShowRejectModal(false);
+    setPendingRejectItem(null);
+    setRejectReason('');
     setSelectedSimaksi(null);
     await fetchData();
   };
@@ -194,7 +207,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleReject(item)}
+                    onClick={() => openRejectModal(item)}
                     className="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-colors"
                     title="Tolak"
                   >
@@ -291,7 +304,7 @@ export default function AdminDashboard() {
 
               <div className="flex gap-4 pt-2">
                 <button
-                  onClick={() => handleReject(selectedSimaksi)}
+                  onClick={() => openRejectModal(selectedSimaksi)}
                   className="flex-1 bg-slate-100 text-slate-600 font-black py-4 rounded-2xl text-xs uppercase tracking-widest hover:bg-rose-50 hover:text-rose-600 transition-all"
                 >
                   Tolak
@@ -463,6 +476,67 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Reject Reason Modal */}
+      {showRejectModal && pendingRejectItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2100] flex items-end sm:items-center justify-center p-4">
+          <div
+            className="w-full max-w-md bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-blue-700 p-7 text-white relative">
+              <button
+                onClick={() => { setShowRejectModal(false); setPendingRejectItem(null); setRejectReason(''); }}
+                className="absolute top-5 right-5 p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="bg-white/20 w-10 h-10 rounded-2xl flex items-center justify-center mb-3">
+                <X className="w-5 h-5" />
+              </div>
+              <h3 className="text-xl font-black italic uppercase tracking-tight">Tolak SIMAKSI</h3>
+              <p className="text-blue-200 text-[10px] font-bold uppercase tracking-widest opacity-70 mt-0.5">
+                {pendingRejectItem.ketuaName} • ID #{pendingRejectItem.simaksiId}
+              </p>
+            </div>
+
+            <div className="p-7 space-y-5">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                  Alasan Penolakan
+                </label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value.slice(0, 250))}
+                  placeholder="Tuliskan alasan penolakan..."
+                  rows={4}
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:border-blue-400 focus:bg-white transition-all resize-none placeholder:text-slate-300"
+                />
+                <div className="text-right mt-1.5">
+                  <span className={`text-[9px] font-black tabular-nums ${rejectReason.length >= 250 ? 'text-blue-600' : 'text-slate-300'}`}>
+                    {rejectReason.length}/250
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowRejectModal(false); setPendingRejectItem(null); setRejectReason(''); }}
+                  className="flex-1 bg-slate-100 text-slate-600 font-black py-3.5 rounded-2xl text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleReject}
+                  className="flex-[2] bg-blue-700 text-white font-black py-3.5 rounded-2xl text-xs uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-800 transition-all active:scale-95"
+                >
+                  Tolak SIMAKSI
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Fullscreen QR Modal */}
       {fullscreenQr && (

@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MOUNTAIN_POS } from '../lib/mockData';
-import { WifiOff, Download, CheckCircle2 } from 'lucide-react';
+import { WifiOff, Download, CheckCircle2, Locate, LocateFixed, LocateOff } from 'lucide-react';
 
-// Component to handle map center updates
 function ChangeView({ center }: { center: [number, number] }) {
   const map = useMap();
   useEffect(() => {
@@ -14,6 +13,27 @@ function ChangeView({ center }: { center: [number, number] }) {
   return null;
 }
 
+function LiveView({ coords }: { coords: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(coords, map.getZoom());
+  }, [coords, map]);
+  return null;
+}
+
+const LIVE_ICON = L.divIcon({
+  className: 'live-location-icon',
+  html: `
+    <div class="relative flex items-center justify-center">
+      <div class="absolute w-10 h-10 bg-blue-500/30 rounded-full animate-ping"></div>
+      <div class="absolute w-6 h-6 bg-blue-400/20 rounded-full"></div>
+      <div class="w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-xl"></div>
+    </div>
+  `,
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+});
+
 interface GPSMapProps {
   currentPosIndex: number;
   mountainName?: string;
@@ -21,14 +41,66 @@ interface GPSMapProps {
   direction?: 'ASCENT' | 'DESCENT';
 }
 
-export default function GPSMap({ 
-  currentPosIndex, 
+export default function GPSMap({
+  currentPosIndex,
   mountainName = 'Gn. Slamet',
   userScans = [],
   direction = 'ASCENT'
 }: GPSMapProps) {
   const [downloading, setDownloading] = useState(false);
   const [cachingStatus, setCachingStatus] = useState<'idle' | 'success'>('idle');
+
+  // Live location state
+  const [liveTracking, setLiveTracking] = useState(false);
+  const [liveCoords, setLiveCoords] = useState<[number, number] | null>(null);
+  const [liveStatus, setLiveStatus] = useState<'idle' | 'waiting' | 'active' | 'error'>('idle');
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  const startLiveLocation = () => {
+    if (!navigator.geolocation) {
+      setLiveError('GPS tidak didukung browser ini');
+      setLiveStatus('error');
+      return;
+    }
+    setLiveStatus('waiting');
+    setLiveError(null);
+    setLiveTracking(true);
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLiveCoords([pos.coords.latitude, pos.coords.longitude]);
+        setLiveStatus('active');
+      },
+      (err) => {
+        setLiveStatus('error');
+        setLiveTracking(false);
+        if (err.code === 1) setLiveError('Izin lokasi ditolak');
+        else if (err.code === 2) setLiveError('Sinyal GPS tidak tersedia');
+        else setLiveError('Gagal mendapatkan lokasi');
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+    );
+  };
+
+  const stopLiveLocation = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setLiveTracking(false);
+    setLiveCoords(null);
+    setLiveStatus('idle');
+    setLiveError(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, []);
 
   const currentPos = MOUNTAIN_POS[currentPosIndex];
   
@@ -154,8 +226,8 @@ export default function GPSMap({
           );
         })}
 
-        {/* Current Location Indicator */}
-        <Marker 
+        {/* Current checkpoint indicator (last scanned pos) */}
+        <Marker
           position={center}
           zIndexOffset={1000}
           icon={L.divIcon({
@@ -170,22 +242,54 @@ export default function GPSMap({
             iconAnchor: [16, 16],
           })}
         />
+
+        {/* Live GPS marker */}
+        {liveCoords && (
+          <>
+            <LiveView coords={liveCoords} />
+            <Marker position={liveCoords} icon={LIVE_ICON} zIndexOffset={2000}>
+              <Popup>
+                <div className="font-bold text-blue-700">Posisi GPS Anda</div>
+                <div className="text-[10px] text-slate-500 font-mono">
+                  {liveCoords[0].toFixed(6)}, {liveCoords[1].toFixed(6)}
+                </div>
+              </Popup>
+            </Marker>
+          </>
+        )}
       </MapContainer>
 
-      <div className="absolute top-4 left-4 z-[1000] flex gap-2">
+      {/* Top-left: offline badge */}
+      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2">
         <div className="bg-slate-900/80 backdrop-blur px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-400 shadow-sm border border-white/10 flex items-center gap-2">
           <WifiOff className="w-3 h-3" />
           OFFLINE CACHE ACTIVE
         </div>
+
+        {/* Live location error toast */}
+        {liveError && (
+          <div className="bg-rose-600/90 backdrop-blur px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white shadow-sm flex items-center gap-2">
+            <LocateOff className="w-3 h-3 shrink-0" />
+            {liveError}
+          </div>
+        )}
+
+        {/* Coordinates display when active */}
+        {liveStatus === 'active' && liveCoords && (
+          <div className="bg-blue-700/90 backdrop-blur px-3 py-1.5 rounded-xl text-[9px] font-black text-white shadow-sm border border-white/10 font-mono">
+            {liveCoords[0].toFixed(5)}, {liveCoords[1].toFixed(5)}
+          </div>
+        )}
       </div>
 
-      <div className="absolute top-4 right-4 z-[1000]">
-        <button 
+      {/* Top-right: Pre-load + Live Location buttons */}
+      <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2 items-end">
+        <button
           onClick={handleDownload}
           disabled={downloading}
           className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
-            cachingStatus === 'success' 
-              ? 'bg-emerald-100 text-emerald-700 border-emerald-200' 
+            cachingStatus === 'success'
+              ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
               : 'bg-white text-slate-700 border-slate-100 hover:bg-slate-50'
           } border`}
         >
@@ -203,6 +307,37 @@ export default function GPSMap({
             <>
               <Download className="w-4 h-4" />
               Pre-load Map
+            </>
+          )}
+        </button>
+
+        {/* Live Location toggle button */}
+        <button
+          onClick={liveTracking ? stopLiveLocation : startLiveLocation}
+          className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg border ${
+            liveStatus === 'active'
+              ? 'bg-blue-600 text-white border-blue-500 shadow-blue-200'
+              : liveStatus === 'waiting'
+              ? 'bg-blue-100 text-blue-700 border-blue-200'
+              : liveStatus === 'error'
+              ? 'bg-rose-50 text-rose-600 border-rose-200'
+              : 'bg-white text-slate-700 border-slate-100 hover:bg-slate-50'
+          }`}
+        >
+          {liveStatus === 'waiting' ? (
+            <>
+              <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              Mencari...
+            </>
+          ) : liveStatus === 'active' ? (
+            <>
+              <LocateFixed className="w-4 h-4 animate-pulse" />
+              Live On
+            </>
+          ) : (
+            <>
+              <Locate className="w-4 h-4" />
+              Live Location
             </>
           )}
         </button>

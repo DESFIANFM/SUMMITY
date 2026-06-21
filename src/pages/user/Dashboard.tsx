@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getAllTrackingHistory, getAllRegistrations, getUserActiveSimaksi } from '../../lib/db';
+import { getAllTrackingHistory, getAllRegistrations, getUserActiveSimaksi, getLatestRejectedSimaksi } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog, RegistrationRequest } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { 
-  CloudRain, 
-  Sun, 
-  Wind, 
-  CircleCheck, 
-  CircleX, 
-  ShieldAlert, 
-  TrendingUp, 
+import {
+  CloudRain,
+  Sun,
+  Wind,
+  CircleCheck,
+  CircleX,
+  ShieldAlert,
+  TrendingUp,
   Info,
   Calendar,
   ChevronRight,
@@ -21,7 +21,8 @@ import {
   ArrowLeft,
   ChevronLeft,
   Ticket,
-  Mountain
+  Mountain,
+  X
 } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
 import InlineSimaksiForm from '../../components/InlineSimaksiForm';
@@ -35,6 +36,8 @@ export default function UserDashboard() {
   const [activeTicket, setActiveTicket] = useState<RegistrationRequest | null>(null);
   const [showSimaksiForm, setShowSimaksiForm] = useState(false);
   const [userActiveSimaksi, setUserActiveSimaksi] = useState<Awaited<ReturnType<typeof getUserActiveSimaksi>>>(null);
+  const [rejectedSimaksi, setRejectedSimaksi] = useState<Awaited<ReturnType<typeof getLatestRejectedSimaksi>>>(null);
+  const [dismissedRejectionId, setDismissedRejectionId] = useState<number | null>(null);
   
   useEffect(() => {
     const fetchData = async () => {
@@ -86,8 +89,12 @@ export default function UserDashboard() {
       setTotalActive(ascent + descent);
 
       if (user?.id) {
-        const activeSimaksi = await getUserActiveSimaksi(user.id);
+        const [activeSimaksi, rejected] = await Promise.all([
+          getUserActiveSimaksi(user.id),
+          getLatestRejectedSimaksi(user.id),
+        ]);
         setUserActiveSimaksi(activeSimaksi);
+        setRejectedSimaksi(rejected);
       }
     };
     fetchData();
@@ -253,6 +260,26 @@ export default function UserDashboard() {
           </button>
         )}
       </div>
+
+      {/* Rejection Banner — hanya muncul jika simaksi terbaru user adalah rejected */}
+      {rejectedSimaksi && !userActiveSimaksi && rejectedSimaksi.simaksiId !== dismissedRejectionId && (
+        <div className="bg-rose-500/15 border border-rose-400 p-4 sm:p-5 rounded-[1.5rem] flex items-start gap-3">
+          <CircleX className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <h4 className="font-black text-rose-700 text-sm italic uppercase leading-none mb-1.5">SIMAKSI Ditolak</h4>
+            <p className="text-[11px] text-rose-600 font-bold leading-relaxed">
+              {rejectedSimaksi.catatanVerifikator || 'Permohonan SIMAKSI Anda telah ditolak oleh admin. Silakan ajukan permohonan baru.'}
+            </p>
+          </div>
+          <button
+            onClick={() => setDismissedRejectionId(rejectedSimaksi.simaksiId)}
+            className="shrink-0 p-1.5 hover:bg-rose-200/50 rounded-xl transition-colors"
+            title="Tutup"
+          >
+            <X className="w-4 h-4 text-rose-500" />
+          </button>
+        </div>
+      )}
 
       {/* Action CTA - Tiket Saya */}
       {activeTicket && (
