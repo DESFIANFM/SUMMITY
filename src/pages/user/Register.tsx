@@ -518,7 +518,7 @@ export default function Register() {
     <div className="min-h-screen bg-slate-50">
 
       {/* BLUE HEADER BANNER */}
-      <div className="bg-gradient-to-br from-blue-700 via-blue-800 to-blue-900 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-[#024F68] via-[#0399BF] to-[#05D5FF] relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-20 -right-20 w-72 h-72 bg-white/5 rounded-full" />
           <div className="absolute top-8 right-1/3 w-24 h-24 bg-white/5 rounded-full" />
@@ -529,7 +529,7 @@ export default function Register() {
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="group flex items-center gap-2 text-[10px] font-black text-blue-200 uppercase tracking-widest hover:text-white transition-colors mb-6"
+            className="group flex items-center gap-2 text-[10px] font-black text-[#05D5FF]/80 uppercase tracking-widest hover:text-white transition-colors mb-6"
           >
             <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             Kembali ke Beranda
@@ -544,7 +544,7 @@ export default function Register() {
                 <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight italic uppercase leading-none">
                   REGISTRASI PENDAKI
                 </h2>
-                <p className="text-blue-200/80 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.25em] mt-2 flex items-center gap-1.5">
+                <p className="text-[#05D5FF]/70 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.25em] mt-2 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
                   Slamet Climbing Safety System — Pendaftaran Akun
                 </p>
