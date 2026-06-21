@@ -3,8 +3,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { getAllTrackingHistory, getPendingSimaksi, getActiveSimaksiCount, approveSimaksi, rejectSimaksi } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog } from '../../types';
-import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search } from 'lucide-react';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map } from 'lucide-react';
 import { formatDateRange } from '../../lib/formatters';
+import GPSMap from '../../components/GPSMap';
 
 export default function AdminDashboard() {
   const [hikerLocations, setHikerLocations] = useState<Record<number, { ascent: number, descent: number }>>({});
@@ -21,6 +22,7 @@ export default function AdminDashboard() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [pendingRejectItem, setPendingRejectItem] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [showTrackingMap, setShowTrackingMap] = useState(false);
   
   // QR Code Simulator page states
   const [activeQrTab, setActiveQrTab] = useState<'pos' | 'ticket'>('pos');
@@ -579,6 +581,31 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* ================= TRACKING MONITOR MAP ================= */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-md overflow-hidden">
+        <button
+          onClick={() => setShowTrackingMap(v => !v)}
+          className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-50 p-2.5 rounded-2xl">
+              <Map className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-left">
+              <span className="text-[9px] font-black uppercase text-emerald-600 tracking-[0.2em] block">Live GPS</span>
+              <span className="text-sm font-black italic text-slate-800 uppercase tracking-tight">Tracking Monitor</span>
+            </div>
+          </div>
+          <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${showTrackingMap ? 'rotate-90' : ''}`} />
+        </button>
+
+        {showTrackingMap && (
+          <div className="p-4 pt-0">
+            <GPSMap currentPosIndex={0} mountainName="Gn. Slamet" />
+          </div>
+        )}
+      </div>
 
       <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl">
         <h3 className="font-bold text-xs uppercase tracking-[0.2em] opacity-40 mb-8 flex items-center gap-2">
