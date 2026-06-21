@@ -525,7 +525,7 @@ export default function Register() {
           <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-white/5 rounded-full" />
         </div>
 
-        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-10 sm:pt-12 pb-28">
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-10 sm:pt-12 pb-10">
           <button
             type="button"
             onClick={() => navigate('/')}
@@ -562,7 +562,7 @@ export default function Register() {
       </div>
 
       {/* CONTENT — pulled up to overlap the blue banner */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 -mt-16 pb-12">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 mt-6 pb-12">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* LEFT COLUMN: THE STEPPER BAR & FORM */}
