@@ -158,8 +158,15 @@ export default function Register() {
         errors.confirmPassword = 'Konfirmasi password tidak cocok';
       }
       
-      if (!formData.phone) errors.phone = 'Nomor telepon wajib diisi';
-      if (!formData.emergencyPhone) errors.emergencyPhone = 'Nomor wali darurat wajib diisi';
+      const phoneSuffix = formData.phone.replace(/^\+62/, '');
+      if (!phoneSuffix) errors.phone = 'Nomor telepon wajib diisi';
+      else if (!/^8/.test(phoneSuffix)) errors.phone = 'Nomor harus diawali 8 (contoh: 81234567890)';
+      else if (phoneSuffix.length < 7 || phoneSuffix.length > 11) errors.phone = 'Nomor harus 7–11 digit setelah +62';
+
+      const emergencySuffix = formData.emergencyPhone.replace(/^\+62/, '');
+      if (!emergencySuffix) errors.emergencyPhone = 'Nomor wali darurat wajib diisi';
+      else if (!/^8/.test(emergencySuffix)) errors.emergencyPhone = 'Nomor harus diawali 8 (contoh: 81234567890)';
+      else if (emergencySuffix.length < 7 || emergencySuffix.length > 11) errors.emergencyPhone = 'Nomor harus 7–11 digit setelah +62';
     }
 
     if (tab === 'personal') {
@@ -746,18 +753,25 @@ export default function Register() {
                           <Phone className="w-3.5 h-3.5 text-emerald-500" />
                           No Telepon Pendaki
                         </label>
-                        <input 
-                          type="tel"
-                          required
-                          value={formData.phone}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9]/g, '');
-                            setFormData({...formData, phone: val});
-                            if (formErrors.phone) setFormErrors({...formErrors, phone: ''});
-                          }}
-                          className={`w-full bg-slate-50 border ${formErrors.phone ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl py-4.5 px-5 text-slate-800 font-bold focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all text-xs`}
-                          placeholder="Contoh: 08123456789"
-                        />
+                        <div className={`flex items-center bg-slate-50 border ${formErrors.phone ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-400 focus-within:bg-white transition-all`}>
+                          <span className="px-3 py-4 text-xs font-black text-slate-500 bg-slate-100 border-r border-slate-200 shrink-0 select-none">+62</span>
+                          <input
+                            type="tel"
+                            inputMode="numeric"
+                            required
+                            value={formData.phone.replace(/^\+62/, '')}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                              setFormData({...formData, phone: '+62' + val});
+                              if (formErrors.phone) setFormErrors({...formErrors, phone: ''});
+                            }}
+                            className="flex-1 bg-transparent py-4 px-3 text-slate-800 font-bold focus:outline-none text-xs"
+                            placeholder="81234567890"
+                          />
+                          <span className="pr-3 text-[9px] font-bold text-slate-400 shrink-0">
+                            {formData.phone.replace(/^\+62/, '').length}/11
+                          </span>
+                        </div>
                         {formErrors.phone && (
                           <p className="text-[9px] text-rose-500 font-bold ml-1 flex items-center gap-1">
                             <AlertCircle className="w-3" /> {formErrors.phone}
@@ -770,18 +784,25 @@ export default function Register() {
                           <HeartHandshake className="w-3.5 h-3.5 text-rose-500" />
                           No Telepon Darurat (Keluarga)
                         </label>
-                        <input 
-                          type="tel"
-                          required
-                          value={formData.emergencyPhone}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9]/g, '');
-                            setFormData({...formData, emergencyPhone: val});
-                            if (formErrors.emergencyPhone) setFormErrors({...formErrors, emergencyPhone: ''});
-                          }}
-                          className={`w-full bg-slate-50 border ${formErrors.emergencyPhone ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl py-4.5 px-5 text-slate-800 font-bold focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all text-xs`}
-                          placeholder="No telepon wali / keluarga"
-                        />
+                        <div className={`flex items-center bg-slate-50 border ${formErrors.emergencyPhone ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-400 focus-within:bg-white transition-all`}>
+                          <span className="px-3 py-4 text-xs font-black text-slate-500 bg-slate-100 border-r border-slate-200 shrink-0 select-none">+62</span>
+                          <input
+                            type="tel"
+                            inputMode="numeric"
+                            required
+                            value={formData.emergencyPhone.replace(/^\+62/, '')}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                              setFormData({...formData, emergencyPhone: '+62' + val});
+                              if (formErrors.emergencyPhone) setFormErrors({...formErrors, emergencyPhone: ''});
+                            }}
+                            className="flex-1 bg-transparent py-4 px-3 text-slate-800 font-bold focus:outline-none text-xs"
+                            placeholder="81234567890"
+                          />
+                          <span className="pr-3 text-[9px] font-bold text-slate-400 shrink-0">
+                            {formData.emergencyPhone.replace(/^\+62/, '').length}/11
+                          </span>
+                        </div>
                         {formErrors.emergencyPhone && (
                           <p className="text-[9px] text-rose-500 font-bold ml-1 flex items-center gap-1">
                             <AlertCircle className="w-3" /> {formErrors.emergencyPhone}
@@ -882,20 +903,29 @@ export default function Register() {
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block font-bold">
                           Nomor Kartu Identitas ({formData.identityType})
                         </label>
-                        <input 
-                          type="text"
-                          required
-                          value={formData.nik}
-                          onChange={(e) => {
-                            const val = formData.identityType === 'KTP' 
-                              ? e.target.value.replace(/[^0-9]/g, '') 
-                              : e.target.value.toUpperCase();
-                            setFormData({...formData, nik: val});
-                            if (formErrors.nik) setFormErrors({...formErrors, nik: ''});
-                          }}
-                          className={`w-full bg-slate-50 border ${formErrors.nik ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl py-4 flex items-center font-mono font-bold focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all text-xs px-5`}
-                          placeholder={`Masukkan nomor ${formData.identityType} Anda`}
-                        />
+                        <div className={`flex items-center bg-slate-50 border ${formErrors.nik ? 'border-rose-300 ring-2 ring-rose-500/10' : 'border-slate-100'} rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-400 focus-within:bg-white transition-all`}>
+                          <input
+                            type="text"
+                            inputMode={formData.identityType === 'KTP' ? 'numeric' : 'text'}
+                            required
+                            value={formData.nik}
+                            maxLength={formData.identityType === 'KTP' ? 16 : undefined}
+                            onChange={(e) => {
+                              const val = formData.identityType === 'KTP'
+                                ? e.target.value.replace(/[^0-9]/g, '').slice(0, 16)
+                                : e.target.value.toUpperCase();
+                              setFormData({...formData, nik: val});
+                              if (formErrors.nik) setFormErrors({...formErrors, nik: ''});
+                            }}
+                            className="flex-1 bg-transparent py-4 px-5 font-mono font-bold focus:outline-none text-xs text-slate-800"
+                            placeholder={`Masukkan nomor ${formData.identityType} Anda`}
+                          />
+                          {formData.identityType === 'KTP' && (
+                            <span className={`pr-4 text-[9px] font-black shrink-0 ${formData.nik.length === 16 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                              {formData.nik.length}/16
+                            </span>
+                          )}
+                        </div>
                         {formErrors.nik && (
                           <p className="text-[9px] text-rose-500 font-bold ml-1 flex items-center gap-1">
                             <AlertCircle className="w-3" /> {formErrors.nik}

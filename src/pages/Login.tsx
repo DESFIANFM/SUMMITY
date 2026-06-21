@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = __APP_VERSION__;
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getSupabaseClient } from '../lib/db';
