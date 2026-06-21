@@ -209,7 +209,7 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
           <span className="block text-[8px] text-slate-400 font-black uppercase tracking-widest mb-2.5 ml-1 flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-emerald-600" /> Tanggal Pendakian
           </span>
-          <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
             <div>
               <label className="block text-[7px] text-slate-400 font-black uppercase tracking-widest mb-1.5">Tanggal Naik</label>
               <input
