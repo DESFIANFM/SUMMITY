@@ -1111,14 +1111,14 @@
     return ok;
   }
 
-  export async function rejectSimaksi(simaksiId: number, localId?: number): Promise<boolean> {
+  export async function rejectSimaksi(simaksiId: number, localId?: number, catatanVerifikator?: string): Promise<boolean> {
     const supabase = getSupabaseClient();
     let ok = false;
 
     if (supabase && isOnline()) {
       const { error } = await supabase
         .from('simaksi')
-        .update({ status: 'rejected' })
+        .update({ status: 'rejected', catatan_verifikator: catatanVerifikator || null })
         .eq('id', simaksiId);
       if (error) console.warn('[SIMAKSI-ADMIN] Gagal reject:', JSON.stringify(error));
       else ok = true;
@@ -1132,6 +1132,7 @@
       const item = await store.get(targetLocalId);
       if (item) {
         item.status = 'rejected';
+        item.catatanVerifikator = catatanVerifikator || null;
         item.synced = ok;
         await store.put(item);
       }
@@ -1139,6 +1140,81 @@
     } catch (_) {}
 
     return ok;
+  }
+
+  export async function getLatestRejectedSimaksi(userId: string): Promise<{
+    simaksiId: number;
+    catatanVerifikator: string | null;
+    tanggalNaik: string;
+    tanggalTurun: string;
+  } | null> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      // Kumpulkan semua simaksi_id milik user (sebagai ketua maupun anggota)
+      const [ketuaRes, anggotaRows] = await Promise.all([
+        supabase
+          .from('simaksi')
+          .select('id, status, catatan_verifikator, tanggal_naik, tanggal_turun, created_at')
+          .eq('ketua_user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('simaksi_anggota')
+          .select('simaksi_id')
+          .eq('user_id', userId),
+      ]);
+
+      // Simaksi terbaru sebagai ketua
+      let latestRow: any = ketuaRes.data || null;
+
+      // Cek juga simaksi terbaru sebagai anggota, ambil yang paling baru
+      const anggotaIds = (anggotaRows.data || []).map((r: any) => r.simaksi_id);
+      if (anggotaIds.length > 0) {
+        const { data: anggotaLatest } = await supabase
+          .from('simaksi')
+          .select('id, status, catatan_verifikator, tanggal_naik, tanggal_turun, created_at')
+          .in('id', anggotaIds)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        // Pilih yang created_at lebih baru di antara ketua vs anggota
+        if (anggotaLatest) {
+          if (!latestRow || new Date(anggotaLatest.created_at) > new Date(latestRow.created_at)) {
+            latestRow = anggotaLatest;
+          }
+        }
+      }
+
+      // Hanya tampilkan banner jika simaksi TERBARU user berstatus rejected
+      if (!latestRow || latestRow.status !== 'rejected') return null;
+
+      return {
+        simaksiId: latestRow.id,
+        catatanVerifikator: latestRow.catatan_verifikator,
+        tanggalNaik: latestRow.tanggal_naik,
+        tanggalTurun: latestRow.tanggal_turun,
+      };
+    }
+
+    // Offline: cek IndexedDB — ambil simaksi terbaru user, cek apakah rejected
+    const db = await initDB();
+    const all = await db.getAll(SIMAKSI_STORE) as any[];
+    const userSimaksi = all
+      .filter(s => s.ketuaUserId === userId || (s.members || []).some((m: any) => m.id === userId))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const latest = userSimaksi[0];
+    if (!latest || latest.status !== 'rejected') return null;
+
+    return {
+      simaksiId: latest.simaksiId || latest.id,
+      catatanVerifikator: latest.catatanVerifikator || null,
+      tanggalNaik: latest.tanggalNaik,
+      tanggalTurun: latest.tanggalTurun,
+    };
   }
 
   export async function completeSimaksi(simaksiId: number): Promise<{ ok: boolean; kodeSimaksi: string | null }> {
