@@ -61,14 +61,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const newUser: User = {
+      name: customData?.name || savedIdentity?.name || (role === 'ADMIN' ? 'Petugas Lapangan' : 'Pendaki'),
+      email: customData?.email || savedIdentity?.email || (role === 'ADMIN' ? 'admin@summity.com' : 'pendaki@summity.com'),
+      role,
+      // Spread caller-provided fields first, then let the normalized identity win
+      // so a legacy USER-XXXX `id` can't clobber the generated internal UUID.
+      ...customData,
       id: normalizedId || (role === 'ADMIN' ? 'admin-1' : 'user-1'),
       displayId,
       idPendaki: displayId,
       id_pendaki: displayId,
-      name: customData?.name || savedIdentity?.name || (role === 'ADMIN' ? 'Petugas Lapangan' : 'Pendaki'),
-      email: customData?.email || savedIdentity?.email || (role === 'ADMIN' ? 'admin@summity.com' : 'pendaki@summity.com'),
-      role,
-      ...customData,
     };
     setUser(newUser);
     localStorage.setItem('summity_user', JSON.stringify(newUser));
