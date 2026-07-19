@@ -11,11 +11,11 @@
   const SIMAKSI_STORE = 'simaksi';
 
   // Utility: convert camelCase keys to snake_case for Supabase/Postgres
-  function toSnakeCaseKey(key: string): string {
+  export function toSnakeCaseKey(key: string): string {
     return key.replace(/([A-Z])/g, '_$1').toLowerCase();
   }
 
-  function toSnakeCaseObject(obj: Record<string, any>): Record<string, any> {
+  export function toSnakeCaseObject(obj: Record<string, any>): Record<string, any> {
     const result: Record<string, any> = {};
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
@@ -26,13 +26,13 @@
   }
 
   // Simple UUID v4 validation
-  function isValidUUID(value: any): boolean {
+  export function isValidUUID(value: any): boolean {
     if (typeof value !== 'string') return false;
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
   }
 
   // Generate compliant RFC4122 v4 UUID
-  function generateUUID(): string {
+  export function generateUUID(): string {
     if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
       try {
         const r = (crypto as any).randomUUID();
@@ -47,7 +47,7 @@
   }
 
   // Safely resolve any ID to a valid UUID format
-  function getValidUUID(id: any): string {
+  export function getValidUUID(id: any): string {
     if (isValidUUID(id)) return id;
     
     const searchId = String(id || '').toUpperCase();
