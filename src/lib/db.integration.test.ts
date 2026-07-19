@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   deleteRegistration,
   getAllRegistrations,
@@ -15,15 +15,25 @@ import {
 import type { RegistrationRequest, ScanLog, SimaksiRequest } from '../types';
 
 // Integration tests exercising the real IndexedDB code paths against an
-// in-memory fake. No Supabase env vars are set, so every sync attempt is a
-// no-op and the app stays in "LOCAL mode" — exactly the offline behaviour we
-// want to guarantee.
+// in-memory fake, in "LOCAL mode" (no Supabase) — exactly the offline
+// behaviour we want to guarantee.
 
-// Give each test a pristine database.
+// Give each test a pristine database and a guaranteed-offline environment.
 beforeEach(() => {
   // Fresh in-memory IndexedDB per test. Cast because fake-indexeddb's IDBFactory
   // is structurally-but-not-nominally the same as lib.dom's.
   globalThis.indexedDB = new IDBFactory() as unknown as IDBFactory;
+
+  // Force LOCAL mode regardless of the machine's env: on devices that have a
+  // .env with VITE_SUPABASE_* set, Vite loads it into import.meta.env and the
+  // sync would actually run, flipping `synced` to true. Blank the credentials
+  // so getSupabaseClient() returns null and every sync stays a no-op.
+  vi.stubEnv('VITE_SUPABASE_URL', '');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 function buildRegistration(overrides: Partial<RegistrationRequest> = {}): Omit<RegistrationRequest, 'id'> {
