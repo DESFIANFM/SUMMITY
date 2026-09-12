@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 const APP_VERSION = __APP_VERSION__;
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mountain, User, ShieldCheck, Lock, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { requestPasswordReset } from '../lib/auth';
+import { Mountain, User, ShieldCheck, Lock, ChevronLeft, AlertTriangle, Mail, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Login() {
@@ -19,6 +20,12 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Panel "lupa password"
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
 
   // Login pendaki. Password TIDAK lagi dicocokkan ke tabel `users` dari
   // browser — diserahkan ke Supabase Auth, yang menyimpannya ter-hash.
@@ -40,6 +47,32 @@ export default function Login() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Kirim email reset. Pesannya sengaja sama baik email terdaftar maupun
+  // tidak, supaya halaman ini tidak bisa dipakai menebak email mana yang ada.
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    if (!/\S+@\S+\.\S+/.test(forgotEmail.trim())) {
+      setForgotError('Format email tidak valid.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { error } = await requestPasswordReset(forgotEmail);
+      if (error) { setForgotError(error); return; }
+      setForgotSent(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const closeForgot = () => {
+    setShowForgot(false);
+    setForgotEmail('');
+    setForgotError('');
+    setForgotSent(false);
   };
 
   // Login petugas. Peran diambil dari kolom `role` di tabel `users`,
@@ -219,6 +252,14 @@ export default function Login() {
                     {isSubmitting ? 'Memproses…' : 'Masuk'}
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => { setShowForgot(true); setLoginError(''); }}
+                  className="w-full text-center text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-emerald-400 transition-colors pt-1"
+                >
+                  Lupa Password?
+                </button>
               </form>
 
               <div className="text-center">
@@ -324,6 +365,87 @@ export default function Login() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ---------- Panel Lupa Password ---------- */}
+      {showForgot && (
+        <div
+          className="fixed inset-0 z-[3000] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6"
+          onClick={closeForgot}
+        >
+          <div
+            className="w-full max-w-sm bg-slate-800 border border-white/10 rounded-[32px] p-7 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {forgotSent ? (
+              <div className="text-center space-y-3">
+                <div className="w-14 h-14 bg-emerald-500/15 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
+                  <Check className="w-7 h-7" />
+                </div>
+                <h3 className="font-black italic uppercase tracking-tight text-white">Email Terkirim</h3>
+                <p className="text-[11px] font-bold text-slate-400 leading-relaxed">
+                  Kalau email tersebut terdaftar, tautan untuk mengatur ulang password
+                  sudah dikirim ke sana. Periksa juga folder spam.
+                </p>
+                <button
+                  onClick={closeForgot}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgot} className="space-y-4">
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
+                    <Mail className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-black italic uppercase tracking-tight text-white leading-none">
+                    Lupa Password
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                    Masukkan email akun Anda. Kami kirimkan tautan untuk membuat
+                    password baru.
+                  </p>
+                </div>
+
+                <input
+                  type="email"
+                  placeholder="email@contoh.com"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  autoFocus
+                  autoCapitalize="none"
+                  className="w-full bg-slate-950/60 border border-white/10 rounded-2xl p-4 text-white text-sm font-bold placeholder-slate-600 outline-none focus:border-emerald-500/60 transition-all"
+                />
+
+                {forgotError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-3 flex items-start gap-2 text-rose-400 text-[10px] font-bold">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{forgotError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-5 gap-2">
+                  <button
+                    type="button"
+                    onClick={closeForgot}
+                    className="col-span-2 py-3 bg-white/5 hover:bg-white/10 text-white/80 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="col-span-3 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                  >
+                    {isSubmitting ? 'Mengirim…' : 'Kirim Tautan'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="relative z-10 mt-16 flex flex-col items-center gap-1">
         <p className="text-[9px] uppercase tracking-[0.4em] font-black opacity-20">V{APP_VERSION}</p>
