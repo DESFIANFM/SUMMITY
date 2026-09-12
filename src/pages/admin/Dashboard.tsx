@@ -1,11 +1,108 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { getAllTrackingHistory, getPendingSimaksi, getActiveSimaksiCount, approveSimaksi, rejectSimaksi } from '../../lib/db';
+import {
+  getAllTrackingHistory,
+  getPendingSimaksi,
+  getActiveSimaksiCount,
+  approveSimaksi,
+  rejectSimaksi,
+  getSimaksiDetail,
+  getHikerStatuses,
+} from '../../lib/db';
+import type { SimaksiDetail, SimaksiPersonDetail, HikerStatusRow, HikerTripStatus } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog } from '../../types';
-import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map } from 'lucide-react';
-import { formatDateRange } from '../../lib/formatters';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map, Phone, MapPin, CreditCard, Crown } from 'lucide-react';
+import { formatDateRange, formatSingleDate } from '../../lib/formatters';
 import GPSMap from '../../components/GPSMap';
+
+// Label + warna untuk tiap status perjalanan pendaki, dipakai chip filter & badge.
+const HIKER_STATUS_META: Record<HikerTripStatus, { label: string; short: string; dot: string; chip: string; badge: string }> = {
+  DI_PERJALANAN: {
+    label: 'Masih di Perjalanan',
+    short: 'Di Perjalanan',
+    dot: 'bg-emerald-500',
+    chip: 'bg-emerald-600 text-white shadow-sm',
+    badge: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  },
+  SUDAH_PULANG: {
+    label: 'Sudah Lapor Pulang',
+    short: 'Lapor Pulang',
+    dot: 'bg-sky-500',
+    chip: 'bg-sky-600 text-white shadow-sm',
+    badge: 'bg-sky-50 text-sky-700 border-sky-100',
+  },
+  MENUNGGU: {
+    label: 'Menunggu Verifikasi',
+    short: 'Menunggu',
+    dot: 'bg-amber-500',
+    chip: 'bg-amber-500 text-white shadow-sm',
+    badge: 'bg-amber-50 text-amber-700 border-amber-100',
+  },
+  TIDAK_ADA: {
+    label: 'Tidak Ada Perjalanan',
+    short: 'Tidak Ada',
+    dot: 'bg-slate-300',
+    chip: 'bg-slate-700 text-white shadow-sm',
+    badge: 'bg-slate-50 text-slate-500 border-slate-200',
+  },
+};
+
+const HIKER_STATUS_ORDER: HikerTripStatus[] = ['DI_PERJALANAN', 'SUDAH_PULANG', 'MENUNGGU', 'TIDAK_ADA'];
+
+const SIMAKSI_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  pending: 'Menunggu Verifikasi',
+  approved: 'Disetujui',
+  rejected: 'Ditolak',
+  checkin: 'Check-In',
+  checkout: 'Check-Out',
+  complete: 'Selesai',
+};
+
+function DetailField({ icon: Icon, label, value }: { icon: any; label: string; value?: string | null }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <Icon className="w-3 h-3 text-slate-300 shrink-0" />
+        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
+      </div>
+      <p className="text-[11px] font-bold text-slate-700 break-words">{value || '—'}</p>
+    </div>
+  );
+}
+
+function PersonCard({ person, isKetua }: { person: SimaksiPersonDetail; isKetua: boolean }) {
+  return (
+    <div className={`p-4 rounded-3xl border ${isKetua ? 'bg-emerald-50/60 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            {isKetua ? <Crown className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+            <span className={`text-[8px] font-black uppercase tracking-widest ${isKetua ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {isKetua ? 'Ketua Kelompok' : 'Anggota'}
+            </span>
+          </div>
+          <p className="font-black text-slate-800 italic uppercase text-sm leading-tight mt-1 break-words">{person.name}</p>
+        </div>
+        {person.idPendaki && (
+          <span className="text-[8px] font-mono font-bold text-slate-400 bg-white border border-slate-100 px-2 py-1 rounded-lg shrink-0">
+            {person.idPendaki}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <DetailField icon={CreditCard} label={person.identityType || 'NIK / Identitas'} value={person.nik} />
+        <DetailField icon={User} label="Jenis Kelamin" value={person.gender} />
+        <DetailField icon={Phone} label="No. Telepon" value={person.phone} />
+        <DetailField icon={Phone} label="Kontak Darurat" value={person.emergencyPhone} />
+        <div className="col-span-2">
+          <DetailField icon={MapPin} label="Alamat" value={person.address} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const [hikerLocations, setHikerLocations] = useState<Record<number, { ascent: number, descent: number }>>({});
@@ -24,6 +121,17 @@ export default function AdminDashboard() {
   const [rejectReason, setRejectReason] = useState('');
   const [showTrackingMap, setShowTrackingMap] = useState(false);
   
+  // Detail SIMAKSI yang dibuka dari log aktivitas / hasil pencarian pendaki
+  const [detailSimaksi, setDetailSimaksi] = useState<SimaksiDetail | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  // Pencarian pendaki + filter status perjalanan
+  const [hikers, setHikers] = useState<HikerStatusRow[]>([]);
+  const [hikerQuery, setHikerQuery] = useState('');
+  const [hikerStatusFilter, setHikerStatusFilter] = useState<'ALL' | HikerTripStatus>('ALL');
+
   // QR Code Simulator page states
   const [activeQrTab, setActiveQrTab] = useState<'pos' | 'ticket'>('pos');
   const [selectedQrTicketId, setSelectedQrTicketId] = useState<string>('');
@@ -58,18 +166,42 @@ export default function AdminDashboard() {
     return filteredScans.slice(start, start + itemsPerPage);
   }, [filteredScans, currentPage, itemsPerPage]);
 
+  const hikerStatusCounts = useMemo(() => {
+    const counts: Record<HikerTripStatus, number> = {
+      DI_PERJALANAN: 0, SUDAH_PULANG: 0, MENUNGGU: 0, TIDAK_ADA: 0,
+    };
+    hikers.forEach(h => { counts[h.status] += 1; });
+    return counts;
+  }, [hikers]);
+
+  const filteredHikers = useMemo(() => {
+    const q = hikerQuery.trim().toLowerCase();
+    return hikers.filter(h => {
+      if (hikerStatusFilter !== 'ALL' && h.status !== hikerStatusFilter) return false;
+      if (!q) return true;
+      return (
+        h.name.toLowerCase().includes(q) ||
+        (h.idPendaki || '').toLowerCase().includes(q) ||
+        (h.kodeSimaksi || '').toLowerCase().includes(q) ||
+        (h.nik || '').toLowerCase().includes(q)
+      );
+    });
+  }, [hikers, hikerQuery, hikerStatusFilter]);
+
   const fetchData = async () => {
     const scans = (await getAllTrackingHistory()) as ScanLog[];
     setAllScans(scans);
 
     setIsLoadingSimaksi(true);
     try {
-      const [pending, activeCount] = await Promise.all([
+      const [pending, activeCount, hikerRows] = await Promise.all([
         getPendingSimaksi(),
         getActiveSimaksiCount(),
+        getHikerStatuses(),
       ]);
       setPendingSimaksi(pending);
       setActiveSimaksiCount(activeCount);
+      setHikers(hikerRows);
     } finally {
       setIsLoadingSimaksi(false);
     }
@@ -104,6 +236,29 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const openSimaksiDetail = async (simaksiId: number) => {
+    setIsDetailOpen(true);
+    setIsLoadingDetail(true);
+    setDetailSimaksi(null);
+    setDetailError(null);
+    try {
+      const detail = await getSimaksiDetail(simaksiId);
+      if (detail) setDetailSimaksi(detail);
+      else setDetailError('Detail SIMAKSI tidak ditemukan.');
+    } catch (err) {
+      console.warn('[DASHBOARD] Gagal memuat detail SIMAKSI:', err);
+      setDetailError('Gagal memuat detail SIMAKSI. Periksa koneksi lalu coba lagi.');
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const closeSimaksiDetail = () => {
+    setIsDetailOpen(false);
+    setDetailSimaksi(null);
+    setDetailError(null);
+  };
 
   const handleApprove = async (item: any) => {
     await approveSimaksi(item.simaksiId, item.localId);
@@ -647,13 +802,118 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* ================= PENCARIAN PENDAKI & STATUS PERJALANAN ================= */}
+      <div className="space-y-2 pt-2">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Cari Pendaki & Status</h3>
+          <span className="text-[9px] font-bold text-slate-300 uppercase tracking-wider tabular-nums">
+            {filteredHikers.length}/{hikers.length} Pendaki
+          </span>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-4 space-y-3 border-b border-slate-50">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-300 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={hikerQuery}
+                onChange={(e) => setHikerQuery(e.target.value)}
+                placeholder="Cari nama pendaki, ID pendaki, NIK, atau kode simaksi..."
+                className="w-full text-xs font-medium text-slate-700 pl-11 pr-10 py-3 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-emerald-400 focus:bg-white transition-all placeholder:text-slate-300"
+              />
+              {hikerQuery && (
+                <button
+                  onClick={() => setHikerQuery('')}
+                  title="Bersihkan pencarian"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-300 hover:bg-slate-100 hover:text-slate-500 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setHikerStatusFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
+                  hikerStatusFilter === 'ALL'
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'bg-slate-50 text-slate-500 border border-slate-100 hover:bg-slate-100'
+                }`}
+              >
+                Semua <span className="tabular-nums opacity-60">{hikers.length}</span>
+              </button>
+              {HIKER_STATUS_ORDER.map(st => {
+                const meta = HIKER_STATUS_META[st];
+                const active = hikerStatusFilter === st;
+                return (
+                  <button
+                    key={st}
+                    onClick={() => setHikerStatusFilter(st)}
+                    title={meta.label}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
+                      active ? meta.chip : 'bg-slate-50 text-slate-500 border border-slate-100 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-white/80' : meta.dot}`}></span>
+                    {meta.short} <span className="tabular-nums opacity-60">{hikerStatusCounts[st]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="divide-y divide-slate-50 max-h-[420px] overflow-y-auto">
+            {filteredHikers.length > 0 ? filteredHikers.map(h => {
+              const meta = HIKER_STATUS_META[h.status];
+              const clickable = h.simaksiId !== null;
+              return (
+                <button
+                  key={h.userId}
+                  onClick={() => clickable && openSimaksiDetail(h.simaksiId as number)}
+                  disabled={!clickable}
+                  className={`w-full text-left p-4 flex items-center justify-between gap-3 transition-colors ${
+                    clickable ? 'hover:bg-emerald-50/40 cursor-pointer' : 'cursor-default'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${meta.dot}`}></span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-black text-slate-700 truncate">{h.name}</span>
+                        {h.isKetua && h.simaksiId !== null && (
+                          <Crown className="w-3 h-3 text-amber-500 shrink-0" />
+                        )}
+                      </div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
+                        {h.simaksiId !== null
+                          ? `${h.kodeSimaksi ? h.kodeSimaksi + ' • ' : ''}${formatDateRange(h.tanggalNaik || '', h.tanggalTurun || '')}`
+                          : (h.idPendaki || 'Belum pernah mengajukan simaksi')}
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`text-[8px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-xl border shrink-0 ${meta.badge}`}>
+                    {meta.label}
+                  </span>
+                </button>
+              );
+            }) : (
+              <div className="p-10 text-center text-slate-300 text-xs font-bold uppercase tracking-widest italic">
+                {hikers.length === 0 ? 'Belum ada data pendaki' : 'Tidak ada pendaki yang cocok'}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-2 pt-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-1">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Log Aktivitas Terbaru</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={() => { setShowSearch(s => !s); setSearchQuery(''); setCurrentPage(1); }}
-              title="Cari Simaksi"
+              title="Cari kode simaksi atau nama pendaki"
               className={`p-1.5 rounded-xl transition-all ${showSearch ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}
             >
               <Search className="w-3.5 h-3.5" />
@@ -663,7 +923,7 @@ export default function AdminDashboard() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                placeholder="Nomor Simaksi"
+                placeholder="Kode simaksi / nama"
                 autoFocus
                 className="w-40 text-xs font-medium text-slate-700 px-3 py-1.5 bg-white border border-slate-200 rounded-xl outline-none focus:border-emerald-400 transition-all placeholder:text-slate-300"
               />
@@ -674,21 +934,36 @@ export default function AdminDashboard() {
         <div className="bg-white rounded-3xl border border-slate-100 divide-y divide-slate-50 overflow-hidden shadow-sm">
           {paginatedScans.length > 0 ? paginatedScans.map(log => {
             const isCheckout = log.validationStatus === 'checkout' || log.type === 'CHECK_OUT';
+            // Log lama / hasil scan offline belum membawa simaksiId — baris itu tidak bisa dibuka.
+            const clickable = typeof log.simaksiId === 'number';
             return (
-            <div key={`${log.id}-${log.timestamp}`} className={`p-4 flex items-center justify-between transition-colors ${
-              isCheckout ? 'bg-rose-50 hover:bg-rose-100/60' : 'hover:bg-slate-50/50'
-            }`}>
-              <div className="flex items-center gap-4">
+            <button
+              key={`${log.id}-${log.timestamp}`}
+              onClick={() => clickable && openSimaksiDetail(log.simaksiId as number)}
+              disabled={!clickable}
+              title={clickable ? 'Lihat detail SIMAKSI' : 'Detail SIMAKSI tidak tersedia untuk log ini'}
+              className={`w-full text-left p-4 flex items-center justify-between transition-colors ${isCheckout ? 'bg-rose-50' : ''} ${
+                clickable
+                  ? `cursor-pointer ${isCheckout ? 'hover:bg-rose-100/60' : 'hover:bg-slate-50/50'}`
+                  : 'cursor-default'
+              }`}
+            >
+              <div className="flex items-center gap-4 min-w-0">
                 <div className={`w-2.5 h-2.5 rounded-full shadow-sm shrink-0 ${
                   isCheckout ? 'bg-rose-500' : (log.type === 'CHECK_IN' ? 'bg-emerald-500' : 'bg-sky-500')
                 }`}></div>
-                <div>
-                  <div className={`text-sm font-black ${isCheckout ? 'text-rose-700' : 'text-slate-700'}`}>
-                    {log.kodeSimaksi
-                      ? `${log.kodeSimaksi} - ${log.ketuaName || 'Ketua'}`
-                      : (log.anggotaName || log.ticketId)}
+                <div className="min-w-0">
+                  <div className={`text-sm font-black flex items-center gap-1.5 ${isCheckout ? 'text-rose-700' : 'text-slate-700'}`}>
+                    <span className="truncate">
+                      {log.kodeSimaksi
+                        ? `${log.kodeSimaksi} - ${log.ketuaName || 'Ketua'}`
+                        : (log.anggotaName || log.ticketId)}
+                    </span>
+                    {clickable && (
+                      <Info className={`w-3 h-3 shrink-0 ${isCheckout ? 'text-rose-300' : 'text-slate-300'}`} />
+                    )}
                   </div>
-                  <div className={`text-[10px] font-bold uppercase ${isCheckout ? 'text-rose-400' : 'text-slate-400'}`}>
+                  <div className={`text-[10px] font-bold uppercase truncate ${isCheckout ? 'text-rose-400' : 'text-slate-400'}`}>
                     {isCheckout
                       ? 'Lapor Kepulangan Pendaki'
                       : `${log.anggotaName || 'Pendaki'} • ${MOUNTAIN_POS[log.posId || 0]?.name || 'Lokasi Tidak Diketahui'}`
@@ -706,7 +981,7 @@ export default function AdminDashboard() {
                   {isCheckout ? 'CHECK-OUT' : (log.type || 'POST_CHECK').replace('_', ' ')}
                 </div>
               </div>
-            </div>
+            </button>
             );
           }) : (
             <div className="p-10 text-center text-slate-300 text-xs font-bold uppercase tracking-widest italic">
@@ -755,6 +1030,134 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
+
+      {/* ================= DETAIL SIMAKSI (dari log aktivitas / pencarian) ================= */}
+      {isDetailOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2100] flex items-end sm:items-center justify-center p-4"
+          onClick={closeSimaksiDetail}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-slate-900 p-8 text-white relative shrink-0">
+              <button
+                onClick={closeSimaksiDetail}
+                className="absolute top-6 right-6 p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="bg-white/20 w-12 h-12 rounded-2xl flex items-center justify-center mb-4">
+                <Info className="w-6 h-6" />
+              </div>
+              <h3 className="text-2xl font-black italic uppercase tracking-tighter">
+                {detailSimaksi?.kodeSimaksi || 'Detail SIMAKSI'}
+              </h3>
+              <p className="text-slate-300 text-xs font-bold uppercase tracking-widest opacity-70">
+                {detailSimaksi
+                  ? `ID #${detailSimaksi.simaksiId} • ${SIMAKSI_STATUS_LABEL[detailSimaksi.status] || detailSimaksi.status}`
+                  : 'Memuat data pendaki…'}
+              </p>
+            </div>
+
+            <div className="p-8 space-y-4 flex-1 overflow-y-auto">
+              {isLoadingDetail && (
+                <div className="py-10 flex flex-col items-center gap-3">
+                  <RefreshCw className="w-6 h-6 text-slate-300 animate-spin" />
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Memuat detail…</span>
+                </div>
+              )}
+
+              {!isLoadingDetail && detailError && (
+                <div className="p-6 bg-rose-50 border border-rose-100 rounded-3xl text-center">
+                  <p className="text-xs font-bold text-rose-600">{detailError}</p>
+                </div>
+              )}
+
+              {!isLoadingDetail && detailSimaksi && (
+                <>
+                  {detailSimaksi.source === 'local' && (
+                    <div className="p-4 bg-amber-50 border border-amber-100 rounded-3xl flex items-start gap-2">
+                      <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-[10px] font-bold text-amber-700 leading-relaxed">
+                        Data diambil dari penyimpanan offline. Nomor identitas dan kontak baru tampil setelah perangkat kembali online.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tanggal Naik</span>
+                      </div>
+                      <p className="font-black text-slate-800 text-sm">{formatSingleDate(detailSimaksi.tanggalNaik)}</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tanggal Turun</span>
+                      </div>
+                      <p className="font-black text-slate-800 text-sm">{formatSingleDate(detailSimaksi.tanggalTurun)}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-emerald-600" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rombongan</span>
+                      </div>
+                      <span className="font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl text-sm">
+                        {detailSimaksi.totalAnggota} Orang
+                      </span>
+                    </div>
+                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
+                      <span className="font-black text-slate-700 uppercase text-[10px] bg-white border border-slate-200 px-3 py-1 rounded-xl">
+                        {SIMAKSI_STATUS_LABEL[detailSimaksi.status] || detailSimaksi.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {detailSimaksi.catatanVerifikator && (
+                    <div className="p-4 bg-rose-50 rounded-3xl border border-rose-100">
+                      <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Catatan Verifikator</span>
+                      <p className="text-xs font-bold text-rose-700 mt-1 leading-relaxed">{detailSimaksi.catatanVerifikator}</p>
+                    </div>
+                  )}
+
+                  {detailSimaksi.ketua && <PersonCard person={detailSimaksi.ketua} isKetua={true} />}
+
+                  <div className="pt-2 space-y-3">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+                      Anggota Rombongan ({detailSimaksi.members.length})
+                    </h4>
+                    {detailSimaksi.members.length > 0 ? (
+                      detailSimaksi.members.map((m, i) => (
+                        <PersonCard key={m.userId || i} person={m} isKetua={false} />
+                      ))
+                    ) : (
+                      <div className="p-6 rounded-3xl border border-dashed border-slate-200 text-center">
+                        <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">
+                          Pendakian solo — tanpa anggota tambahan
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {detailSimaksi.createdAt && (
+                    <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest text-center pt-2">
+                      Diajukan {new Date(detailSimaksi.createdAt).toLocaleString('id-ID')}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
