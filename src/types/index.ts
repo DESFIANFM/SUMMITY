@@ -90,6 +90,7 @@ export interface ScanLog {
   synced: boolean;
   // enriched fields from getAllTrackingHistory
   anggotaName?: string;
+  simaksiId?: number;
   kodeSimaksi?: string;
   ketuaName?: string;
   validationStatus?: string;

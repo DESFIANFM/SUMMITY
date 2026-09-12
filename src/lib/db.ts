@@ -1025,6 +1025,273 @@
       }));
   }
 
+  // --------------------------------------------------------------------
+  // DETAIL SIMAKSI (untuk panel detail di dashboard admin)
+  // --------------------------------------------------------------------
+
+  export interface SimaksiPersonDetail {
+    userId: string;
+    idPendaki: string | null;
+    name: string;
+    nik: string | null;
+    phone: string | null;
+    emergencyPhone: string | null;
+    gender: string | null;
+    address: string | null;
+    identityType: string | null;
+    citizenship: string | null;
+  }
+
+  export interface SimaksiDetail {
+    simaksiId: number;
+    kodeSimaksi: string | null;
+    status: string;
+    gunungId: number | null;
+    tanggalNaik: string;
+    tanggalTurun: string;
+    totalAnggota: number;
+    createdAt: string | null;
+    catatanVerifikator: string | null;
+    ketua: SimaksiPersonDetail | null;
+    members: SimaksiPersonDetail[];
+    // 'local' berarti data diambil dari IndexedDB — kolom identitas tidak tersedia.
+    source: 'supabase' | 'local';
+  }
+
+  // Kolom identitas di tabel `users` yang dibutuhkan panel detail.
+  const USER_DETAIL_COLUMNS =
+    'id, id_pendaki, name, nik, phone, emergency_phone, gender, address, identity_type, citizenship';
+
+  function mapUserDetail(row: any): SimaksiPersonDetail {
+    return {
+      userId: row?.id ?? '',
+      idPendaki: row?.id_pendaki ?? null,
+      name: row?.name || 'Pendaki',
+      nik: row?.nik ?? null,
+      phone: row?.phone ?? null,
+      emergencyPhone: row?.emergency_phone ?? null,
+      gender: row?.gender ?? null,
+      address: row?.address ?? null,
+      identityType: row?.identity_type ?? null,
+      citizenship: row?.citizenship ?? null,
+    };
+  }
+
+  function localPersonDetail(id: string, name: string): SimaksiPersonDetail {
+    return {
+      userId: id,
+      idPendaki: id || null,
+      name: name || 'Pendaki',
+      nik: null,
+      phone: null,
+      emergencyPhone: null,
+      gender: null,
+      address: null,
+      identityType: null,
+      citizenship: null,
+    };
+  }
+
+  export async function getSimaksiDetail(simaksiId: number): Promise<SimaksiDetail | null> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      const { data: header, error } = await supabase
+        .from('simaksi')
+        .select('id, kode_simaksi, status, gunung_id, ketua_user_id, tanggal_naik, tanggal_turun, total_anggota, created_at, catatan_verifikator')
+        .eq('id', simaksiId)
+        .maybeSingle();
+
+      if (error) console.warn('[SIMAKSI] Gagal fetch detail:', JSON.stringify(error));
+
+      if (header) {
+        const { data: anggotaRows } = await supabase
+          .from('simaksi_anggota')
+          .select('user_id')
+          .eq('simaksi_id', simaksiId);
+
+        const memberIds = (anggotaRows || []).map((a: any) => a.user_id).filter(Boolean) as string[];
+        const allIds = [...new Set([header.ketua_user_id, ...memberIds].filter(Boolean))] as string[];
+
+        let userRows: any[] = [];
+        if (allIds.length > 0) {
+          const { data } = await supabase.from('users').select(USER_DETAIL_COLUMNS).in('id', allIds);
+          userRows = data || [];
+        }
+        const userMap: Record<string, any> = {};
+        userRows.forEach((u: any) => { userMap[u.id] = u; });
+
+        return {
+          simaksiId: header.id,
+          kodeSimaksi: header.kode_simaksi ?? null,
+          status: header.status,
+          gunungId: header.gunung_id ?? null,
+          tanggalNaik: header.tanggal_naik,
+          tanggalTurun: header.tanggal_turun,
+          totalAnggota: header.total_anggota ?? 1 + memberIds.length,
+          createdAt: header.created_at ?? null,
+          catatanVerifikator: header.catatan_verifikator ?? null,
+          ketua: header.ketua_user_id
+            ? mapUserDetail(userMap[header.ketua_user_id] ?? { id: header.ketua_user_id, name: 'Ketua' })
+            : null,
+          members: memberIds.map((id) => mapUserDetail(userMap[id] ?? { id, name: 'Anggota' })),
+          source: 'supabase',
+        };
+      }
+    }
+
+    // Offline: IndexedDB hanya menyimpan nama + id_pendaki, tanpa kolom identitas.
+    const db = await initDB();
+    const all = await db.getAll(SIMAKSI_STORE) as any[];
+    const found = all.find((s: any) => s.simaksiId === simaksiId || s.id === simaksiId);
+    if (!found) return null;
+
+    return {
+      simaksiId: found.simaksiId || found.id,
+      kodeSimaksi: found.kodeSimaksi ?? null,
+      status: found.status,
+      gunungId: found.gunungId ?? null,
+      tanggalNaik: found.tanggalNaik,
+      tanggalTurun: found.tanggalTurun,
+      totalAnggota: found.totalAnggota || 1 + (found.members?.length || 0),
+      createdAt: found.createdAt ?? null,
+      catatanVerifikator: found.catatanVerifikator ?? null,
+      ketua: localPersonDetail(found.ketuaUserId, found.ketuaName || 'Ketua'),
+      members: (found.members || []).map((m: any) => localPersonDetail(m.id, m.name || 'Anggota')),
+      source: 'local',
+    };
+  }
+
+  // --------------------------------------------------------------------
+  // STATUS PENDAKI (untuk pencarian nama + filter status di dashboard)
+  // --------------------------------------------------------------------
+
+  export type HikerTripStatus = 'DI_PERJALANAN' | 'SUDAH_PULANG' | 'MENUNGGU' | 'TIDAK_ADA';
+
+  export interface HikerStatusRow {
+    userId: string;
+    idPendaki: string | null;
+    name: string;
+    nik: string | null;
+    phone: string | null;
+    status: HikerTripStatus;
+    simaksiId: number | null;
+    kodeSimaksi: string | null;
+    simaksiStatus: string | null;
+    tanggalNaik: string | null;
+    tanggalTurun: string | null;
+    isKetua: boolean;
+  }
+
+  // Status perjalanan pendaki diturunkan dari status SIMAKSI terbarunya.
+  // draft/rejected diperlakukan sama dengan "tidak punya perjalanan aktif".
+  export function mapSimaksiStatusToHikerStatus(status?: string | null): HikerTripStatus {
+    switch (status) {
+      case 'approved':
+      case 'checkin':
+        return 'DI_PERJALANAN';
+      case 'checkout':
+      case 'complete':
+        return 'SUDAH_PULANG';
+      case 'pending':
+        return 'MENUNGGU';
+      default:
+        return 'TIDAK_ADA';
+    }
+  }
+
+  export async function getHikerStatuses(): Promise<HikerStatusRow[]> {
+    const supabase = getSupabaseClient();
+
+    if (supabase && isOnline()) {
+      const [usersRes, simaksiRes, anggotaRes] = await Promise.all([
+        supabase.from('users').select('id, id_pendaki, name, nik, phone, role'),
+        supabase
+          .from('simaksi')
+          .select('id, kode_simaksi, status, ketua_user_id, tanggal_naik, tanggal_turun, created_at')
+          .order('created_at', { ascending: false }),
+        supabase.from('simaksi_anggota').select('simaksi_id, user_id'),
+      ]);
+
+      if (usersRes.error) console.warn('[PENDAKI] Gagal fetch users:', JSON.stringify(usersRes.error));
+
+      if (usersRes.data) {
+        const membersBySimaksi: Record<number, string[]> = {};
+        (anggotaRes.data || []).forEach((a: any) => {
+          if (!membersBySimaksi[a.simaksi_id]) membersBySimaksi[a.simaksi_id] = [];
+          membersBySimaksi[a.simaksi_id].push(a.user_id);
+        });
+
+        // Urut terbaru dulu, lalu ambil kemunculan pertama tiap user = simaksi terbarunya.
+        const simaksiRows = (simaksiRes.data || [])
+          .filter((s: any) => s.status !== 'draft')
+          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        const latestByUser: Record<string, { row: any; isKetua: boolean }> = {};
+        simaksiRows.forEach((s: any) => {
+          if (s.ketua_user_id && !latestByUser[s.ketua_user_id]) {
+            latestByUser[s.ketua_user_id] = { row: s, isKetua: true };
+          }
+          (membersBySimaksi[s.id] || []).forEach((uid: string) => {
+            if (uid && !latestByUser[uid]) latestByUser[uid] = { row: s, isKetua: false };
+          });
+        });
+
+        return (usersRes.data as any[])
+          .filter((u) => u.role !== 'ADMIN')
+          .map((u) => {
+            const latest = latestByUser[u.id];
+            return {
+              userId: u.id,
+              idPendaki: u.id_pendaki ?? null,
+              name: u.name || 'Pendaki',
+              nik: u.nik ?? null,
+              phone: u.phone ?? null,
+              status: mapSimaksiStatusToHikerStatus(latest?.row.status),
+              simaksiId: latest?.row.id ?? null,
+              kodeSimaksi: latest?.row.kode_simaksi ?? null,
+              simaksiStatus: latest?.row.status ?? null,
+              tanggalNaik: latest?.row.tanggal_naik ?? null,
+              tanggalTurun: latest?.row.tanggal_turun ?? null,
+              isKetua: latest?.isKetua ?? false,
+            };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
+    }
+
+    // Offline: hanya pendaki yang muncul di simaksi lokal yang bisa didaftar.
+    const db = await initDB();
+    const all = await db.getAll(SIMAKSI_STORE) as any[];
+    const sorted = all
+      .filter((s: any) => s.status !== 'draft')
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const rows: Record<string, HikerStatusRow> = {};
+    const addRow = (id: string, name: string, s: any, isKetua: boolean) => {
+      if (!id || rows[id]) return;
+      rows[id] = {
+        userId: id,
+        idPendaki: id,
+        name: name || 'Pendaki',
+        nik: null,
+        phone: null,
+        status: mapSimaksiStatusToHikerStatus(s.status),
+        simaksiId: s.simaksiId || s.id || null,
+        kodeSimaksi: s.kodeSimaksi ?? null,
+        simaksiStatus: s.status ?? null,
+        tanggalNaik: s.tanggalNaik ?? null,
+        tanggalTurun: s.tanggalTurun ?? null,
+        isKetua,
+      };
+    };
+    sorted.forEach((s: any) => {
+      addRow(s.ketuaUserId, s.ketuaName, s, true);
+      (s.members || []).forEach((m: any) => addRow(m.id, m.name, s, false));
+    });
+    return Object.values(rows).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   export async function approveSimaksi(simaksiId: number, localId?: number): Promise<boolean> {
     const supabase = getSupabaseClient();
     let ok = false;
@@ -1499,11 +1766,12 @@
         }
 
         // user → simaksi info lookup
-        const userSimaksiLookup: Record<string, { kodeSimaksi: string; ketuaName: string }> = {};
+        const userSimaksiLookup: Record<string, { simaksiId: number; kodeSimaksi: string; ketuaName: string }> = {};
         (membershipResult.data || []).forEach((a: any) => {
           const sim = anggotaSimaksiRows.find((s: any) => s.id === a.simaksi_id);
           if (sim && !userSimaksiLookup[a.user_id]) {
             userSimaksiLookup[a.user_id] = {
+              simaksiId: sim.id,
               kodeSimaksi: sim.kode_simaksi || `SMK-${sim.id}`,
               ketuaName: userNameMap[sim.ketua_user_id] || 'Ketua',
             };
@@ -1512,6 +1780,7 @@
         (ketuaSimaksiResult.data || []).forEach((s: any) => {
           if (s.ketua_user_id && !userSimaksiLookup[s.ketua_user_id]) {
             userSimaksiLookup[s.ketua_user_id] = {
+              simaksiId: s.id,
               kodeSimaksi: s.kode_simaksi || `SMK-${s.id}`,
               ketuaName: userNameMap[s.ketua_user_id] || 'Ketua',
             };
@@ -1523,6 +1792,7 @@
           ticketId: h.ticket_id,
           userId: h.user_id,
           anggotaName: userNameMap[h.user_id] || 'Pendaki',
+          simaksiId: userSimaksiLookup[h.user_id]?.simaksiId,
           kodeSimaksi: userSimaksiLookup[h.user_id]?.kodeSimaksi,
           ketuaName: userSimaksiLookup[h.user_id]?.ketuaName,
           timestamp: h.scanned_at,
