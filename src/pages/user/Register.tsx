@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { saveRegistration } from '../../lib/db';
-import { getSupabaseClient } from '../../lib/db';
+import { signUpClimber } from '../../lib/auth';
 import {
   Mountain,
   User,
@@ -24,9 +23,12 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Register() {
-  const { user, login } = useAuth();
+  const { user, setSessionUser } = useAuth();
   const navigate = useNavigate();
   
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
+
   // Submit complete flags
   const [submitted, setSubmitted] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -213,130 +215,71 @@ export default function Register() {
       return;
     }
 
-    // Load list
-    let usersList: any[] = [];
+    // Pendaftaran kini lewat Supabase Auth: password diserahkan ke Auth
+    // (tersimpan ter-hash) dan TIDAK lagi ditulis ke tabel `users`.
+    //
+    // Keunikan username/email/NIK ditegakkan oleh UNIQUE constraint di
+    // database, bukan lagi dengan membaca daftar user dari localStorage —
+    // pengecekan di klien tidak bisa dipercaya dan butuh akses baca ke
+    // seluruh tabel `users`.
+    //
+    // `id_pendaki` diisi otomatis oleh trigger di database, jadi klien tidak
+    // perlu tahu nomor urut pendaki lain.
+    setIsSubmitting(true);
     try {
-      const stored = localStorage.getItem('summity_users_list');
-      if (stored) {
-        usersList = JSON.parse(stored);
-      }
-    } catch(err) {}
-
-    // Check duplicate username/email/nik
-    const isUserExists = usersList.some(u => 
-      u.username?.toLowerCase() === formData.username.toLowerCase() || 
-      u.email?.toLowerCase() === formData.email.toLowerCase() ||
-      (formData.nik && u.nik === formData.nik)
-    );
-
-    if (isUserExists) {
-      setFormErrors({ address: 'Username, Email, atau NIK sudah terdaftar dalam sistem!' });
-      return;
-    }
-
-    // Step 3 submission: create account
-    const internalId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
-      ? (crypto as any).randomUUID()
-      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0;
-          const v = c === 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
-
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const dateStr = `${year}${month}${day}`;
-
-    // Find sequence suffix
-    let maxSeq = 0;
-    if (Array.isArray(usersList)) {
-      for (const u of usersList) {
-        const idVal = String(u.id_pendaki || u.idPendaki || u.displayId || '');
-        if (idVal.startsWith(dateStr)) {
-          const seqStr = idVal.substring(dateStr.length);
-          const seq = parseInt(seqStr, 10);
-          if (!isNaN(seq) && seq > maxSeq) {
-            maxSeq = seq;
-          }
-        }
-      }
-    }
-    const nextSeq = maxSeq + 1;
-    const seqStr = String(nextSeq).padStart(4, '0');
-    const displayId = `${dateStr}${seqStr}`;
-
-    const newClimberAccount = {
-      id: internalId,
-      displayId,
-      idPendaki: displayId,
-      id_pendaki: displayId,
-      role: 'USER' as const,
-      name: formData.name,
-      email: formData.email,
-      username: formData.username,
-      password: formData.password,
-      phone: formData.phone,
-      emergencyPhone: formData.emergencyPhone,
-      citizenship: formData.citizenship,
-      identityType: formData.identityType,
-      nik: formData.nik,
-      gender: formData.gender,
-      weight: formData.weight,
-      height: formData.height,
-      province: formData.province,
-      city: formData.city,
-      district: formData.district,
-      subdistrict: formData.subdistrict,
-      address: formData.address,
-    };
-
-    // Save user to memory list
-    usersList.push(newClimberAccount);
-    localStorage.setItem('summity_users_list', JSON.stringify(usersList));
-
-    // Also persist the newly created user as the active stored identity
-    try {
-      localStorage.setItem('summity_user', JSON.stringify(newClimberAccount));
-    } catch (e) {
-      console.error('Failed to persist summity_user to localStorage', e);
-    }
-
-    // Log the user in
-    login('USER', newClimberAccount);
-
-    // Save user account to local IndexedDB and sync to Supabase `users` table
-    (async () => {
-      try {
-        console.log('Saving account to IndexedDB and syncing to Supabase...');
-        await saveRegistration({
-          userId: internalId,
+      const { user: created, error, needsEmailConfirmation } = await signUpClimber({
+        email: formData.email,
+        password: formData.password,
+        username: formData.username,
+        profile: {
           name: formData.name,
-          nik: formData.nik,
           phone: formData.phone,
-          emergencyPhone: formData.emergencyPhone,
-          birthDate: '1995-01-01',
-          address: formData.address,
+          emergency_phone: formData.emergencyPhone,
+          citizenship: formData.citizenship,
+          identity_type: formData.identityType,
+          nik: formData.nik,
           gender: formData.gender,
-          mountain: '',
-          date: '',
-          endDate: '',
-          status: 'APPROVED',
-          createdAt: new Date().toISOString(),
-          ...(newClimberAccount as any),
-        });
-        console.log('Account saved and sync initiated!');
-      } catch (err) {
-        console.warn('Account sync failed (will retry when online):', err);
-      }
-    })();
+          weight: formData.weight,
+          height: formData.height,
+          province: formData.province,
+          city: formData.city,
+          district: formData.district,
+          subdistrict: formData.subdistrict,
+          address: formData.address,
+        },
+      });
 
-    setSubmitted(true);
+      if (error) {
+        const lowered = error.toLowerCase();
+        if (lowered.includes('already registered') || lowered.includes('already been registered')) {
+          setFormErrors({ email: 'Email ini sudah terdaftar. Silakan login.' });
+        } else if (lowered.includes('users_username_key') || lowered.includes('username')) {
+          setFormErrors({ username: 'Username sudah dipakai. Pilih yang lain.' });
+        } else if (lowered.includes('users_nik_key') || lowered.includes('nik')) {
+          setFormErrors({ nik: 'NIK ini sudah terdaftar dalam sistem.' });
+        } else {
+          setFormErrors({ address: error });
+        }
+        return;
+      }
+
+      if (needsEmailConfirmation) {
+        setNeedsConfirmation(true);
+        setSubmitted(true);
+        return;
+      }
+
+      if (created) setSessionUser(created);
+      setSubmitted(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCopyId = () => {
-    const activeUser = (user || JSON.parse(localStorage.getItem('summity_user') || '{}')) as any;
+    // Profil aktif kini datang dari AuthContext (sesi Supabase). Key
+    // localStorage 'summity_user' sudah tidak ditulis lagi sejak migrasi Auth.
+    const activeUser = (user || {}) as any;
     const idToCopy = activeUser.id_pendaki || activeUser.idPendaki || activeUser.displayId || 'USER-SUMMITY';
     navigator.clipboard.writeText(idToCopy);
     setCopied(true);
@@ -351,6 +294,36 @@ export default function Register() {
     const maskedLength = Math.max(0, nik.length - 10);
     return `${firstPart}${'*'.repeat(maskedLength || 6)}${lastPart}`;
   };
+
+  // Kalau "Confirm email" aktif di Supabase, signUp tidak mengembalikan sesi.
+  // Akun sudah dibuat, tapi pendaki harus mengklik link di emailnya dulu.
+  if (submitted && needsConfirmation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <div className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-xl border border-slate-100 text-center space-y-5">
+          <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto">
+            <Mail className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-black italic uppercase tracking-tight text-slate-800">
+              Cek Email Anda
+            </h2>
+            <p className="text-xs font-bold text-slate-400 leading-relaxed">
+              Akun untuk <span className="text-emerald-600">{formData.email}</span> sudah dibuat.
+              Klik tautan konfirmasi yang kami kirim ke email tersebut, lalu login untuk
+              mendapatkan ID Pendaki Anda.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/login')}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl text-[11px] uppercase tracking-[0.15em] transition-all"
+          >
+            Ke Halaman Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // SUCCESS PAGE: ACCOUNT CREATED
   if (submitted) {
@@ -1219,10 +1192,11 @@ export default function Register() {
                       </button>
                       <button
                         type="submit"
-                        className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-black px-8 py-4.5 rounded-2xl text-[11px] uppercase tracking-[0.15em] flex items-center justify-center gap-2.5 transition-all shadow-xl shadow-emerald-600/10"
+                        disabled={isSubmitting}
+                        className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black px-8 py-4.5 rounded-2xl text-[11px] uppercase tracking-[0.15em] flex items-center justify-center gap-2.5 transition-all shadow-xl shadow-emerald-600/10"
                       >
-                        Daftar & Konfirmasi Akun
-                        <ArrowRight className="w-4 h-4" />
+                        {isSubmitting ? 'Mendaftarkan…' : 'Daftar & Konfirmasi Akun'}
+                        {!isSubmitting && <ArrowRight className="w-4 h-4" />}
                       </button>
                     </div>
 

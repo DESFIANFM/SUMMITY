@@ -702,25 +702,11 @@
         const memberRows: { simaksi_id: number; user_id: string }[] = [];
 
         for (const m of data.members as { id: string; name: string }[]) {
-          let resolvedUUID: string | null = null;
-
-          if (isValidUUID(m.id)) {
-            // Sudah UUID — verifikasi ada di tabel users
-            const { data: exists } = await supabase
-              .from('users')
-              .select('id')
-              .eq('id', m.id)
-              .maybeSingle();
-            if (exists) resolvedUUID = m.id;
-          } else {
-            // Display ID (id_pendaki) — lookup ke Supabase
-            const { data: userRow } = await supabase
-              .from('users')
-              .select('id')
-              .eq('id_pendaki', m.id)
-              .maybeSingle();
-            if (userRow) resolvedUUID = userRow.id;
-          }
+          // find_pendaki menerima UUID maupun id_pendaki, jadi satu jalur
+          // cukup — dan tetap bekerja setelah RLS dikunci di 0003, saat
+          // pendaki tidak lagi boleh membaca baris pendaki lain.
+          const found = await findPendaki(m.id);
+          const resolvedUUID: string | null = found?.id ?? null;
 
           if (resolvedUUID) {
             memberRows.push({ simaksi_id: simaksiId, user_id: resolvedUUID });
@@ -757,6 +743,55 @@
     }
   }
 
+  // --------------------------------------------------------------------
+  // LOOKUP PENDAKI LAIN (lewat RPC)
+  //
+  // Setelah RLS dikunci (0003), seorang pendaki hanya boleh membaca
+  // barisnya sendiri di tabel `users`. Fitur rombongan tetap butuh
+  // mencari pendaki lain, jadi jalurnya dipindah ke RPC SECURITY DEFINER
+  // yang hanya mengembalikan id, id_pendaki, dan nama.
+  // --------------------------------------------------------------------
+
+  export interface PendakiRef {
+    id: string;
+    idPendaki: string | null;
+    name: string;
+  }
+
+  /** Cari pendaki dari ID Pendaki ATAU UUID. null bila tidak ada. */
+  export async function findPendaki(key: string): Promise<PendakiRef | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !key) return null;
+
+    const { data, error } = await supabase.rpc('find_pendaki', { p_key: String(key).trim() });
+    if (error) {
+      console.warn('[PENDAKI] find_pendaki gagal:', error.message);
+      return null;
+    }
+    if (!data) return null;
+    return {
+      id: (data as any).id,
+      idPendaki: (data as any).id_pendaki ?? null,
+      name: (data as any).name || 'Pendaki',
+    };
+  }
+
+  /** Anggota sebuah simaksi. Array kosong bila pemanggil tidak berhak. */
+  export async function getSimaksiMembers(simaksiId: number): Promise<{ id: string; name: string }[]> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return [];
+
+    const { data, error } = await supabase.rpc('get_simaksi_members', { p_simaksi_id: simaksiId });
+    if (error) {
+      console.warn('[SIMAKSI] get_simaksi_members gagal:', error.message);
+      return [];
+    }
+    return ((data as any[]) || []).map(m => ({
+      id: m.idPendaki || m.id,
+      name: m.name || 'Anggota',
+    }));
+  }
+
   export async function getUserActiveSimaksi(userId: string): Promise<{
     simaksiId: number;
     status: 'draft' | 'pending' | 'approved';
@@ -781,11 +816,11 @@
         .maybeSingle();
 
       if (asKetua) {
-        const { data: ketuaUser } = await supabase.from('users').select('name').eq('id', asKetua.ketua_user_id).maybeSingle();
+        const ketuaRef = await findPendaki(asKetua.ketua_user_id);
         return {
           simaksiId: asKetua.id,
           status: asKetua.status,
-          ketuaName: ketuaUser?.name || 'Ketua',
+          ketuaName: ketuaRef?.name || 'Ketua',
           ketuaUserId: asKetua.ketua_user_id,
           tanggalNaik: asKetua.tanggal_naik,
           tanggalTurun: asKetua.tanggal_turun,
@@ -804,11 +839,11 @@
 
       if (asAnggota && asAnggota.simaksi) {
         const s = asAnggota.simaksi as any;
-        const { data: ketuaUser } = await supabase.from('users').select('name').eq('id', s.ketua_user_id).maybeSingle();
+        const ketuaRef = await findPendaki(s.ketua_user_id);
         return {
           simaksiId: s.id,
           status: s.status,
-          ketuaName: ketuaUser?.name || 'Ketua',
+          ketuaName: ketuaRef?.name || 'Ketua',
           ketuaUserId: s.ketua_user_id,
           tanggalNaik: s.tanggal_naik,
           tanggalTurun: s.tanggal_turun,
@@ -957,22 +992,18 @@
       if (combined.length === 0) return [];
 
       // Fetch nama ketua
-      const ketuaIds = [...new Set(combined.map((s: any) => s.ketua_user_id))];
-      const { data: ketuaUsers } = await supabase.from('users').select('id, name').in('id', ketuaIds);
+      const ketuaIds = [...new Set(combined.map((s: any) => s.ketua_user_id))] as string[];
+      const ketuaRefs = await Promise.all(ketuaIds.map(id => findPendaki(id)));
       const ketuaMap: Record<string, string> = {};
-      (ketuaUsers || []).forEach((u: any) => { ketuaMap[u.id] = u.name; });
+      ketuaIds.forEach((id, i) => { ketuaMap[id] = ketuaRefs[i]?.name || 'Ketua'; });
 
-      // Fetch anggota per simaksi
+      // Fetch anggota per simaksi lewat RPC. Join langsung ke `users` tidak
+      // dipakai lagi karena setelah 0003 nama anggota akan ter-filter RLS
+      // dan semuanya tampil sebagai 'Anggota'.
       const simaksiIds = combined.map((s: any) => s.id);
-      const { data: anggotaDetail } = await supabase
-        .from('simaksi_anggota')
-        .select('simaksi_id, user_id, users(name, id_pendaki)')
-        .in('simaksi_id', simaksiIds);
       const membersMap: Record<number, { id: string; name: string }[]> = {};
-      (anggotaDetail || []).forEach((a: any) => {
-        if (!membersMap[a.simaksi_id]) membersMap[a.simaksi_id] = [];
-        membersMap[a.simaksi_id].push({ id: a.users?.id_pendaki || a.user_id, name: a.users?.name || 'Anggota' });
-      });
+      const memberLists = await Promise.all(simaksiIds.map((id: number) => getSimaksiMembers(id)));
+      simaksiIds.forEach((id: number, i: number) => { membersMap[id] = memberLists[i]; });
 
       const result = combined
         .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())

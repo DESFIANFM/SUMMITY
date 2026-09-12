@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { saveSimaksi, getSupabaseClient } from '../../lib/db';
+import { saveSimaksi, findPendaki } from '../../lib/db';
 import {
   Mountain,
   Calendar,
@@ -96,19 +96,15 @@ export default function SubmitSimaksi() {
       }
     } catch (_) {}
 
-    // 2. Kalau nama tidak ada di localStorage, lookup ke Supabase
+    // 2. Kalau nama tidak ada di localStorage, lookup lewat RPC.
+    //    Query langsung ke tabel `users` tidak dipakai lagi: setelah RLS
+    //    dikunci (0003) seorang pendaki tidak boleh membaca baris pendaki
+    //    lain, jadi pencarian anggota harus lewat find_pendaki.
     if (!resolvedName) {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const { data } = await supabase
-          .from('users')
-          .select('id, name, id_pendaki')
-          .eq('id_pendaki', inputId)
-          .maybeSingle();
-        if (data?.name) {
-          resolvedName = data.name;
-          resolvedId = data.id_pendaki || inputId;
-        }
+      const found = await findPendaki(inputId);
+      if (found?.name) {
+        resolvedName = found.name;
+        resolvedId = found.idPendaki || inputId;
       }
     }
 

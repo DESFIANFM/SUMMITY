@@ -15,12 +15,13 @@ afterEach(() => {
 // deterministic-enough polyfill so db.ts helpers work under test.
 beforeEach(() => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID !== 'function') {
-    // @ts-expect-error - augmenting the test environment only
+    // @types/node mengetikkan randomUUID sebagai template literal UUID, bukan
+    // string biasa — jadi hasil replace() perlu di-assert ke tipe itu.
     crypto.randomUUID = () =>
       '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => {
         const r = (Math.random() * 16) | 0;
         const v = c === '0' ? r : (c === '1' ? (r & 0x3) | 0x8 : 4);
         return v.toString(16);
-      });
+      }) as ReturnType<typeof crypto.randomUUID>;
   }
 });
