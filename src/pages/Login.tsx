@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 const APP_VERSION = __APP_VERSION__;
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getSupabaseClient } from '../lib/db';
-import { Mountain, User, ShieldCheck, Lock, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { requestPasswordReset } from '../lib/auth';
+import { Mountain, User, ShieldCheck, Lock, ChevronLeft, AlertTriangle, Mail, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { signIn } = useAuth();
   const navigate = useNavigate();
-  
+
   const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
@@ -18,145 +19,81 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = (role: 'USER' | 'ADMIN', customData?: any) => {
-    login(role, customData);
-    navigate('/');
-  };
+  // Panel "lupa password"
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
 
-  // Get users from localStorage, initialize with default if empty
-  const getRegisteredUsers = () => {
-    const listStr = localStorage.getItem('summity_users_list');
-    if (listStr) {
-      try {
-        return JSON.parse(listStr);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    
-    // Default account
-    const defaultUser = {
-      id: 'user-default',
-      name: 'Aditya Rahman',
-      email: 'pendaki@summity.com',
-      role: 'USER',
-      citizenship: 'WNI',
-      identityType: 'KTP',
-      nik: '1234567890123456',
-      phone: '081234567890',
-      emergencyPhone: '081298765432',
-      gender: 'Laki-laki',
-      weight: '65',
-      height: '170',
-      province: 'Jawa Tengah',
-      city: 'Banyumas',
-      district: 'Baturraden',
-      subdistrict: 'Karangmangu',
-      address: 'Jl. Raya Baturraden No. 12',
-      username: 'pendaki',
-      password: 'password'
-    };
-    
-    localStorage.setItem('summity_users_list', JSON.stringify([defaultUser]));
-    return [defaultUser];
-  };
-
+  // Login pendaki. Password TIDAK lagi dicocokkan ke tabel `users` dari
+  // browser — diserahkan ke Supabase Auth, yang menyimpannya ter-hash.
   const handleUserVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-
+    setIsSubmitting(true);
     try {
-      // Try to lookup user in Supabase users table first (if online)
-      const supabase = getSupabaseClient();
-
-      if (supabase) {
-        console.log('[LOGIN] 🔍 Querying Supabase users table...');
-        
-        const { data: users, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('username', username)
-          .eq('password', password);
-
-        if (!error && users && users.length > 0) {
-          console.log('[LOGIN] ✅ User found in Supabase:', users[0].id);
-          const supabaseUser = users[0];
-          
-          // Map snake_case from DB to camelCase for frontend
-          const now = new Date();
-          const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-          const displayId = supabaseUser.id_pendaki || `${dateStr}0001`;
-          const userData = {
-            id: supabaseUser.id,
-            displayId,
-            idPendaki: displayId,
-            id_pendaki: displayId,
-            name: supabaseUser.name,
-            email: supabaseUser.email,
-            username: supabaseUser.username,
-            password: supabaseUser.password,
-            phone: supabaseUser.phone,
-            emergencyPhone: supabaseUser.emergency_phone,
-            citizenship: supabaseUser.citizenship,
-            identityType: supabaseUser.identity_type,
-            nik: supabaseUser.nik,
-            gender: supabaseUser.gender,
-            weight: supabaseUser.weight,
-            height: supabaseUser.height,
-            province: supabaseUser.province,
-            city: supabaseUser.city,
-            district: supabaseUser.district,
-            subdistrict: supabaseUser.subdistrict,
-            address: supabaseUser.address,
-            role: supabaseUser.role || 'USER',
-          };
-
-          setLoginError('');
-          handleLogin('USER', userData);
-          return;
-        } else if (error) {
-          console.warn('[LOGIN] ⚠️ Supabase query error:', error);
-        }
+      const { user, error } = await signIn(username, password);
+      if (error || !user) {
+        setLoginError(error || 'Username atau password salah!');
+        return;
       }
-
-      // Fallback: check localStorage if Supabase is unavailable or user not found
-      console.log('[LOGIN] 📦 Falling back to localStorage lookup...');
-      const users = getRegisteredUsers();
-      const matchedUser = users.find(
-        (u: any) => u.username?.toLowerCase() === username.toLowerCase() && u.password === password
-      );
-
-      if (matchedUser) {
-        setLoginError('');
-        handleLogin('USER', matchedUser);
-      } else {
-        setLoginError('Username atau Password pendaki salah!');
+      if (user.role === 'ADMIN') {
+        setLoginError('Akun ini adalah akun petugas. Silakan masuk lewat menu Petugas.');
+        return;
       }
-    } catch (err) {
-      console.warn('[LOGIN] ⚠️ Login error:', err);
-      // Fallback: check localStorage
-      const users = getRegisteredUsers();
-      const matchedUser = users.find(
-        (u: any) => u.username?.toLowerCase() === username.toLowerCase() && u.password === password
-      );
-
-      if (matchedUser) {
-        setLoginError('');
-        handleLogin('USER', matchedUser);
-      } else {
-        setLoginError('Username atau Password pendaki salah!');
-      }
+      navigate('/');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleAdminVerify = (e: React.FormEvent) => {
+  // Kirim email reset. Pesannya sengaja sama baik email terdaftar maupun
+  // tidak, supaya halaman ini tidak bisa dipakai menebak email mana yang ada.
+  const handleForgot = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === 'admin123') {
-      setPasswordError('');
-      handleLogin('ADMIN');
-    } else {
-      setPasswordError('Password petugas salah. Silakan coba lagi!');
+    setForgotError('');
+    if (!/\S+@\S+\.\S+/.test(forgotEmail.trim())) {
+      setForgotError('Format email tidak valid.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { error } = await requestPasswordReset(forgotEmail);
+      if (error) { setForgotError(error); return; }
+      setForgotSent(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const closeForgot = () => {
+    setShowForgot(false);
+    setForgotEmail('');
+    setForgotError('');
+    setForgotSent(false);
+  };
+
+  // Login petugas. Peran diambil dari kolom `role` di tabel `users`,
+  // bukan dari perbandingan string di frontend seperti sebelumnya.
+  const handleAdminVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setIsSubmitting(true);
+    try {
+      const { user, error } = await signIn(adminUsername, adminPassword);
+      if (error || !user) {
+        setPasswordError(error || 'Username atau password petugas salah!');
+        return;
+      }
+      if (user.role !== 'ADMIN') {
+        setPasswordError('Akun ini tidak punya akses petugas.');
+        return;
+      }
+      navigate('/');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -294,13 +231,6 @@ export default function Login() {
                   </div>
                 )}
 
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3 text-center text-white">
-                  <span className="text-[7px] font-black uppercase opacity-60 block tracking-widest leading-none mb-1">AKUN PERCOBAAN DEFAULT</span>
-                  <div className="text-[10px] font-mono select-all">
-                    Username: <span className="text-emerald-450 font-black">pendaki</span> | Pass: <span className="text-emerald-450 font-black">password</span>
-                  </div>
-                </div>
-
                 <div className="grid grid-cols-5 gap-2 pt-2">
                   <button
                     type="button"
@@ -316,11 +246,20 @@ export default function Login() {
                   </button>
                   <button
                     type="submit"
-                    className="col-span-3 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all"
+                    disabled={isSubmitting}
+                    className="col-span-3 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 disabled:active:scale-100 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all"
                   >
-                    Masuk
+                    {isSubmitting ? 'Memproses…' : 'Masuk'}
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => { setShowForgot(true); setLoginError(''); }}
+                  className="w-full text-center text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-emerald-400 transition-colors pt-1"
+                >
+                  Lupa Password?
+                </button>
               </form>
 
               <div className="text-center">
@@ -366,11 +305,23 @@ export default function Login() {
                   Verifikasi Staf
                 </h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1.5">
-                  Masukkan password untuk mengakses admin
+                  Masuk dengan akun petugas terdaftar
                 </p>
               </div>
 
               <form onSubmit={handleAdminVerify} className="space-y-4">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Username / email petugas"
+                    value={adminUsername}
+                    onChange={(e) => setAdminUsername(e.target.value)}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    className="w-full bg-slate-950/60 border border-white/10 rounded-2xl p-4 text-white text-sm font-bold placeholder-slate-600 outline-none focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 transition-all-custom"
+                    autoFocus
+                  />
+                </div>
                 <div className="relative">
                   <input
                     type="password"
@@ -378,7 +329,6 @@ export default function Login() {
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     className="w-full bg-slate-950/60 border border-white/10 rounded-2xl p-4 text-center tracking-[0.5em] text-white text-base font-bold placeholder-slate-600 outline-none focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 transition-all-custom"
-                    autoFocus
                   />
                 </div>
 
@@ -389,17 +339,13 @@ export default function Login() {
                   </div>
                 )}
 
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3.5 text-center">
-                  <span className="text-[8px] font-black uppercase opacity-40 block tracking-widest leading-none mb-1">PASSWORD PENGUJIAN</span>
-                  <span className="text-xs font-mono font-black text-emerald-400 tracking-wider">admin123</span>
-                </div>
-
                 <div className="grid grid-cols-5 gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => {
                       setShowAdminPassword(false);
                       setPasswordError('');
+                      setAdminUsername('');
                       setAdminPassword('');
                     }}
                     className="col-span-2 py-3 bg-white/5 hover:bg-white/10 active:scale-95 text-white/80 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
@@ -408,9 +354,10 @@ export default function Login() {
                   </button>
                   <button
                     type="submit"
-                    className="col-span-3 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-emerald-950/30 transition-all"
+                    disabled={isSubmitting}
+                    className="col-span-3 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 disabled:active:scale-100 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-emerald-950/30 transition-all"
                   >
-                    Konfirmasi
+                    {isSubmitting ? 'Memproses…' : 'Konfirmasi'}
                   </button>
                 </div>
               </form>
@@ -418,6 +365,87 @@ export default function Login() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ---------- Panel Lupa Password ---------- */}
+      {showForgot && (
+        <div
+          className="fixed inset-0 z-[3000] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6"
+          onClick={closeForgot}
+        >
+          <div
+            className="w-full max-w-sm bg-slate-800 border border-white/10 rounded-[32px] p-7 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {forgotSent ? (
+              <div className="text-center space-y-3">
+                <div className="w-14 h-14 bg-emerald-500/15 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
+                  <Check className="w-7 h-7" />
+                </div>
+                <h3 className="font-black italic uppercase tracking-tight text-white">Email Terkirim</h3>
+                <p className="text-[11px] font-bold text-slate-400 leading-relaxed">
+                  Kalau email tersebut terdaftar, tautan untuk mengatur ulang password
+                  sudah dikirim ke sana. Periksa juga folder spam.
+                </p>
+                <button
+                  onClick={closeForgot}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgot} className="space-y-4">
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
+                    <Mail className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-black italic uppercase tracking-tight text-white leading-none">
+                    Lupa Password
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                    Masukkan email akun Anda. Kami kirimkan tautan untuk membuat
+                    password baru.
+                  </p>
+                </div>
+
+                <input
+                  type="email"
+                  placeholder="email@contoh.com"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  autoFocus
+                  autoCapitalize="none"
+                  className="w-full bg-slate-950/60 border border-white/10 rounded-2xl p-4 text-white text-sm font-bold placeholder-slate-600 outline-none focus:border-emerald-500/60 transition-all"
+                />
+
+                {forgotError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-3 flex items-start gap-2 text-rose-400 text-[10px] font-bold">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{forgotError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-5 gap-2">
+                  <button
+                    type="button"
+                    onClick={closeForgot}
+                    className="col-span-2 py-3 bg-white/5 hover:bg-white/10 text-white/80 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="col-span-3 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                  >
+                    {isSubmitting ? 'Mengirim…' : 'Kirim Tautan'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="relative z-10 mt-16 flex flex-col items-center gap-1">
         <p className="text-[9px] uppercase tracking-[0.4em] font-black opacity-20">V{APP_VERSION}</p>

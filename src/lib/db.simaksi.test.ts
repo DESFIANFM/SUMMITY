@@ -39,7 +39,15 @@ const { supabaseMock } = vi.hoisted(() => {
     return builder;
   };
 
-  const client = { from: vi.fn((t: string) => makeBuilder(t)) };
+  const client = {
+    from: vi.fn((t: string) => makeBuilder(t)),
+    // db.ts memakai RPC SECURITY DEFINER (find_pendaki, get_simaksi_members,
+    // is_admin) untuk data yang tidak lagi boleh dibaca langsung setelah RLS
+    // dikunci. RPC dirutekan sebagai pseudo-table `rpc:<nama>` supaya
+    // resolver per-test bisa menanganinya tanpa mengubah cabang tabel biasa.
+    rpc: vi.fn((fn: string, args: any) =>
+      Promise.resolve(state.resolver({ table: `rpc:${fn}`, ops: [['rpc', [args]]] }))),
+  };
   return { supabaseMock: { state, client } };
 });
 
@@ -130,7 +138,11 @@ describe('trySyncSimaksi', () => {
     const localId = await seedLocalSimaksi({ ketuaUserId: UUID_A });
 
     state().resolver = ({ table, ops }) => {
-      if (table === 'users') return { data: { id: UUID_B }, error: null }; // member lookup
+      // Lookup anggota kini lewat RPC find_pendaki, bukan query langsung ke
+      // tabel `users` — lihat catatan di 0002b_member_lookup_rpc.sql.
+      if (table === 'rpc:find_pendaki') {
+        return { data: { id: UUID_B, id_pendaki: '202606180002', name: 'Anggota' }, error: null };
+      }
       if (table === 'simaksi' && hasOp(ops, 'single')) return { data: { id: 501 }, error: null }; // header insert
       if (table === 'simaksi_anggota') return { data: null, error: null };
       return { data: null, error: null };
@@ -264,6 +276,9 @@ describe('getUserActiveSimaksi', () => {
           },
           error: null,
         };
+      }
+      if (table === 'rpc:find_pendaki') {
+        return { data: { id: UUID_A, id_pendaki: '202606180001', name: 'Budi' }, error: null };
       }
       if (table === 'users') return { data: { name: 'Budi' }, error: null };
       return { data: null, error: null };

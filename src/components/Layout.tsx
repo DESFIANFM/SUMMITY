@@ -43,8 +43,8 @@ export default function Layout() {
   
   const activeView = searchParams.get('view');
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 

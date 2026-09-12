@@ -10,6 +10,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 // Pages
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import UserDashboard from './pages/user/Dashboard';
 import UserTickets from './pages/user/Tickets';
 import UserTracking from './pages/user/Tracking';
@@ -24,6 +25,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+      {/* Tujuan tautan reset dari email. Harus tetap dapat diakses meski
+          sesi (recovery) sudah aktif — karena itu tidak diarahkan ulang. */}
+      <Route path="/reset-password" element={<ResetPassword />} />
       
       <Route element={<Layout />}>
         {/* Public Routes inside Layout */}
