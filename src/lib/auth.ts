@@ -194,7 +194,21 @@
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    return { error: error?.message || null };
+    if (!error) return { error: null };
+
+    // GoTrue membalas 500 dengan body kosong saat SMTP gagal, dan supabase-js
+    // menaruhnya apa adanya sehingga pengguna melihat "{}" — tidak berguna.
+    // Terjemahkan ke pesan yang bisa ditindaklanjuti.
+    const raw = (error.message || '').trim();
+    console.warn('[AUTH] resetPasswordForEmail gagal:', error.status, raw);
+
+    if (/rate limit/i.test(raw)) {
+      return { error: 'Terlalu banyak percobaan. Tunggu beberapa saat lalu coba lagi.' };
+    }
+    if (!raw || raw === '{}' || /unexpected_failure|error sending/i.test(raw)) {
+      return { error: 'Email gagal dikirim. Konfigurasi SMTP di server bermasalah — hubungi petugas.' };
+    }
+    return { error: raw };
   }
 
   /** Set password baru — dipakai di halaman yang dibuka dari link email reset. */
