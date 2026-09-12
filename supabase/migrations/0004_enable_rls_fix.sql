@@ -69,13 +69,14 @@ CREATE POLICY users_update_self ON public.users
   USING (id = auth.uid() OR public.is_admin())
   WITH CHECK (id = auth.uid() OR public.is_admin());
 
+-- CATATAN: cek lintas-tabel memakai helper SECURITY DEFINER dari
+-- 0005_fix_policy_recursion.sql untuk menghindari rekursi antar policy.
 -- simaksi
 CREATE POLICY simaksi_select_own ON public.simaksi
   FOR SELECT TO authenticated
   USING (
     ketua_user_id = auth.uid()
-    OR EXISTS (SELECT 1 FROM public.simaksi_anggota sa
-                WHERE sa.simaksi_id = simaksi.id AND sa.user_id = auth.uid())
+    OR public.is_simaksi_member(id)
     OR public.is_admin()
   );
 
@@ -94,16 +95,14 @@ CREATE POLICY simaksi_anggota_select_own ON public.simaksi_anggota
   FOR SELECT TO authenticated
   USING (
     user_id = auth.uid()
-    OR EXISTS (SELECT 1 FROM public.simaksi s
-                WHERE s.id = simaksi_anggota.simaksi_id AND s.ketua_user_id = auth.uid())
+    OR public.is_simaksi_ketua(simaksi_id)
     OR public.is_admin()
   );
 
 CREATE POLICY simaksi_anggota_insert_ketua ON public.simaksi_anggota
   FOR INSERT TO authenticated
   WITH CHECK (
-    EXISTS (SELECT 1 FROM public.simaksi s
-             WHERE s.id = simaksi_anggota.simaksi_id AND s.ketua_user_id = auth.uid())
+    public.is_simaksi_ketua(simaksi_id)
     OR public.is_admin()
   );
 
