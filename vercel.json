@@ -1,23 +1,23 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    {
-      "comment": "SPA fallback. Semua rute ditangani React Router di sisi klien, jadi path seperti /reset-password atau /tickets tidak punya file sendiri di dist/. Tanpa aturan ini, membuka URL itu langsung (refresh, atau tautan reset password dari email) akan 404. Vercel memeriksa file statis lebih dulu, sehingga aset, sw.js, dan manifest tetap tersaji normal.",
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
     {
-      "comment": "Service worker tidak boleh di-cache CDN. Kalau sw.js lama ikut ter-cache, pengguna akan terus disajikan bundle lama meski deploy baru sudah naik.",
       "source": "/sw.js",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     },
     {
-      "comment": "Sama untuk registerSW.js dan manifest.",
-      "source": "/(registerSW.js|manifest.webmanifest)",
+      "source": "/registerSW.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
