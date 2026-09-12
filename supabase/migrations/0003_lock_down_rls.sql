@@ -12,6 +12,16 @@
 -- bernilai NULL untuk request anon, sehingga semua policy di bawah gagal.
 -- =====================================================================
 
+-- ---------- 0. Aktifkan RLS ------------------------------------------
+-- WAJIB ada di sini, bukan hanya di 0001. Postgres mengabaikan SEMUA
+-- policy pada tabel yang RLS-nya nonaktif — jadi tanpa baris ini, seluruh
+-- policy di bawah tercipta tapi tidak pernah dievaluasi, dan tabelnya
+-- tetap terbuka penuh. Idempotent, aman meski 0001 sudah menjalankannya.
+ALTER TABLE public.users            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.simaksi          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.simaksi_anggota  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tracking_history ENABLE ROW LEVEL SECURITY;
+
 -- ---------- users ---------------------------------------------------
 DROP POLICY IF EXISTS users_select ON public.users;
 DROP POLICY IF EXISTS users_insert ON public.users;
