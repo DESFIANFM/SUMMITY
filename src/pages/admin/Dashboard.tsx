@@ -1104,20 +1104,21 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-emerald-600" />
+                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rombongan</span>
                       </div>
-                      <span className="font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl text-sm">
-                        {detailSimaksi.totalAnggota} Orang
-                      </span>
+                      <p className="font-black text-emerald-700 text-sm">{detailSimaksi.totalAnggota} Orang</p>
                     </div>
-                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
-                      <span className="font-black text-slate-700 uppercase text-[10px] bg-white border border-slate-200 px-3 py-1 rounded-xl">
+                    <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
+                      </div>
+                      <p className="font-black text-slate-800 text-sm uppercase break-words">
                         {SIMAKSI_STATUS_LABEL[detailSimaksi.status] || detailSimaksi.status}
-                      </span>
+                      </p>
                     </div>
                   </div>
 
