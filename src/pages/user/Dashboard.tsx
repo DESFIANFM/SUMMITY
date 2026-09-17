@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getAllTrackingHistory, getAllRegistrations, getUserActiveSimaksi, getLatestRejectedSimaksi } from '../../lib/db';
+import { getAllTrackingHistory, getAllRegistrations, getUserActiveSimaksi, getLatestRejectedSimaksi, getLastScanForUsers } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog, RegistrationRequest } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +38,9 @@ export default function UserDashboard() {
   const [userActiveSimaksi, setUserActiveSimaksi] = useState<Awaited<ReturnType<typeof getUserActiveSimaksi>>>(null);
   const [rejectedSimaksi, setRejectedSimaksi] = useState<Awaited<ReturnType<typeof getLatestRejectedSimaksi>>>(null);
   const [dismissedRejectionId, setDismissedRejectionId] = useState<number | null>(null);
+  // Perjalanan dianggap dimulai setelah pendaki memindai pos pertama kali
+  // (Basecamp/Pos 0). Sebelum itu statusnya "disetujui, siap berangkat".
+  const [sudahJalan, setSudahJalan] = useState(false);
   
   useEffect(() => {
     const fetchData = async () => {
@@ -60,6 +63,11 @@ export default function UserDashboard() {
          || sortedUserRegs.find(r => r.status === 'REJECTED');
          
       setActiveTicket(latestTicket || null);
+
+      if (user?.id) {
+        const scanTerakhir = await getLastScanForUsers([user.id]);
+        setSudahJalan(scanTerakhir !== null);
+      }
 
       const latestScansByTicket: Record<string, { type: string; direction: 'ASCENT' | 'DESCENT' }> = {};
       const sortedScans = [...scans].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -210,20 +218,53 @@ export default function UserDashboard() {
       <div className="space-y-4">
         {userActiveSimaksi ? (
           userActiveSimaksi.status === 'approved' ? (
-            <div className="w-full bg-blue-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center gap-4 shadow-xl shadow-blue-100">
-              <div className="bg-white/20 p-2.5 rounded-2xl shrink-0">
-                <Mountain className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+            sudahJalan ? (
+              <div className="w-full bg-blue-600 p-5 sm:p-6 rounded-[2rem] text-white flex items-center gap-4 shadow-xl shadow-blue-100">
+                <div className="bg-white/20 p-2.5 rounded-2xl shrink-0">
+                  <Mountain className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                </div>
+                <div className="text-left flex-1">
+                  <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Sedang Dalam Perjalanan</h3>
+                  <p className="text-[9px] sm:text-[10px] font-bold text-blue-100 uppercase tracking-widest opacity-90">
+                    Ketua rombongan: {userActiveSimaksi.ketuaName}
+                  </p>
+                  <p className="text-[8px] font-bold text-blue-200 uppercase tracking-widest opacity-70 mt-0.5">
+                    {formatDateRange(userActiveSimaksi.tanggalNaik, userActiveSimaksi.tanggalTurun)}
+                  </p>
+                </div>
               </div>
-              <div className="text-left flex-1">
-                <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">Sedang Dalam Perjalanan</h3>
-                <p className="text-[9px] sm:text-[10px] font-bold text-blue-100 uppercase tracking-widest opacity-90">
-                  Ketua rombongan: {userActiveSimaksi.ketuaName}
-                </p>
-                <p className="text-[8px] font-bold text-blue-200 uppercase tracking-widest opacity-70 mt-0.5">
-                  {formatDateRange(userActiveSimaksi.tanggalNaik, userActiveSimaksi.tanggalTurun)}
-                </p>
+            ) : (
+              /* Sudah disetujui tapi belum memindai pos mana pun */
+              <div className="w-full bg-emerald-600 p-5 sm:p-6 rounded-[2rem] text-white shadow-xl shadow-emerald-100">
+                <div className="flex items-center gap-4">
+                  <div className="bg-white/20 p-2.5 rounded-2xl shrink-0">
+                    <CircleCheck className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </div>
+                  <div className="text-left flex-1 min-w-0">
+                    <h3 className="font-black italic uppercase text-base sm:text-lg leading-none mb-1">SIMAKSI Telah Disetujui</h3>
+                    <p className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-widest opacity-90">
+                      Ketua rombongan: {userActiveSimaksi.ketuaName}
+                    </p>
+                    <p className="text-[8px] font-bold text-emerald-200 uppercase tracking-widest opacity-70 mt-0.5">
+                      {formatDateRange(userActiveSimaksi.tanggalNaik, userActiveSimaksi.tanggalTurun)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-white/15 space-y-2">
+                  <p className="text-[10px] sm:text-[11px] font-bold text-emerald-50 leading-relaxed">
+                    Pastikan perlengkapan lengkap dan kondisi tubuh siap. Ikuti jalur resmi,
+                    jangan tinggalkan rombongan, dan lapor petugas bila ada kendala.
+                  </p>
+                  <p className="text-[10px] sm:text-[11px] font-bold text-emerald-50 leading-relaxed">
+                    Puncak bukan tujuan utama — pulang dengan selamat adalah tujuannya.
+                  </p>
+                  <p className="text-[11px] sm:text-xs font-black italic uppercase tracking-wide text-white pt-0.5">
+                    Jangan lupa bawa turun sampahmu!!
+                  </p>
+                </div>
               </div>
-            </div>
+            )
           ) : (
             <div className="w-full bg-amber-500 p-5 sm:p-6 rounded-[2rem] text-white flex items-center gap-4 shadow-xl shadow-amber-100">
               <div className="bg-white/20 p-2.5 rounded-2xl shrink-0">

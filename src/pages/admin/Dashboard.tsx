@@ -1367,7 +1367,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-2 mb-2">
                           <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
                           <span className="text-[10px] font-black text-sky-600 uppercase tracking-widest">
-                            {detailFromLog.type === 'CHECK_OUT' ? 'Lapor Pulang' : 'Check-In Ini'}
+                            {detailFromLog.type === 'CHECK_OUT' ? 'Lapor Pulang' : 'Pos Check Log'}
                           </span>
                         </div>
                         {detailFromLog.type === 'CHECK_OUT' ? (
