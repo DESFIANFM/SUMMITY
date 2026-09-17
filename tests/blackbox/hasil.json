@@ -76,16 +76,16 @@
     "aktual": "Akun berhasil dibuat; tampil layar “Cek Email Anda” karena konfirmasi email aktif"
   },
   "B13": {
-    "status": "Tidak Valid",
-    "aktual": "Muncul pesan mengandung “gagal disimpan”"
+    "status": "Valid",
+    "aktual": "Muncul pesan “Username sudah dipakai. Pilih yang lain.” di tahap Akun; tidak ada akun yang tercipta"
   },
   "B14": {
-    "status": "Tidak Valid",
-    "aktual": "Muncul pesan mengandung “gagal disimpan”"
+    "status": "Valid",
+    "aktual": "Muncul pesan “NIK ini sudah terdaftar dalam sistem.” di tahap Data Diri; tidak ada akun yang tercipta"
   },
   "B15": {
-    "status": "Tidak Valid",
-    "aktual": "Muncul pesan mengandung “gagal disimpan”"
+    "status": "Valid",
+    "aktual": "Muncul pesan “Email ini sudah terdaftar. Silakan login.” di tahap Akun; tidak ada akun yang tercipta"
   },
   "C1": {
     "status": "Valid",
