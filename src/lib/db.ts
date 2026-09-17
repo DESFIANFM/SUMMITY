@@ -813,6 +813,47 @@
     if (error) console.warn('[GEAR] Gagal simpan ceklis:', error.message);
   }
 
+  export interface LastScanInfo {
+    posId: number;
+    scannedAt: string;
+    userId: string;
+    validationStatus: string | null;
+  }
+
+  /**
+   * Pemindaian pos TERAKHIR dari seluruh anggota sebuah rombongan.
+   *
+   * Sengaja tidak mengambil dari log aktivitas dashboard: log itu dibatasi
+   * 50 entri terbaru se-sistem, jadi rombongan yang lama tidak bergerak bisa
+   * hilang dari sana. Di sini query langsung ke tracking_history, sehingga
+   * posisi yang ditampilkan benar-benar posisi aktual.
+   */
+  export async function getLastScanForUsers(userIds: string[]): Promise<LastScanInfo | null> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !userIds?.length) return null;
+
+    const { data, error } = await supabase
+      .from('tracking_history')
+      .select('pos_id, scanned_at, user_id, validation_status')
+      .in('user_id', userIds)
+      .order('scanned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[TRACKING] Gagal ambil scan terakhir:', error.message);
+      return null;
+    }
+    if (!data) return null;
+
+    return {
+      posId: getPosIndexByUUID(data.pos_id),
+      scannedAt: data.scanned_at,
+      userId: data.user_id,
+      validationStatus: data.validation_status ?? null,
+    };
+  }
+
   /** Ceklis perlengkapan satu simaksi, untuk ditampilkan ke petugas. */
   export async function getSimaksiGear(simaksiId: number): Promise<GearItem[]> {
     const supabase = getSupabaseClient();

@@ -11,11 +11,12 @@ import {
   getMandatoryGear,
   getSimaksiGear,
   getSimaksiMembers,
+  getLastScanForUsers,
 } from '../../lib/db';
-import type { SimaksiDetail, SimaksiPersonDetail, HikerStatusRow, HikerTripStatus, GearItem } from '../../lib/db';
+import type { SimaksiDetail, SimaksiPersonDetail, HikerStatusRow, HikerTripStatus, GearItem, LastScanInfo } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog } from '../../types';
-import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map, Phone, MapPin, CreditCard, Crown, CheckSquare, Square, Package, ChevronDown, Mountain } from 'lucide-react';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map, Phone, MapPin, CreditCard, Crown, CheckSquare, Square, Package, ChevronDown, Mountain, Clock, Navigation } from 'lucide-react';
 import { formatDateRange, formatSingleDate } from '../../lib/formatters';
 import GPSMap from '../../components/GPSMap';
 import { motion, AnimatePresence } from 'motion/react';
@@ -149,6 +150,10 @@ export default function AdminDashboard() {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [memberCache, setMemberCache] = useState<Record<number, { id: string; name: string }[]>>({});
   const [detailGearKodes, setDetailGearKodes] = useState<string[] | null>(null);
+
+  // Konteks check-in: baris log yang diklik, dan posisi aktual rombongan
+  const [detailFromLog, setDetailFromLog] = useState<{ posId: number; timestamp: string; type?: string } | null>(null);
+  const [detailLastScan, setDetailLastScan] = useState<LastScanInfo | null | undefined>(undefined);
 
   // Pencarian pendaki + filter status perjalanan
   const [hikers, setHikers] = useState<HikerStatusRow[]>([]);
@@ -294,17 +299,28 @@ export default function AdminDashboard() {
     getMandatoryGear().then(setGearCatalog);
   }, []);
 
-  const openSimaksiDetail = async (simaksiId: number) => {
+  const openSimaksiDetail = async (
+    simaksiId: number,
+    fromLog?: { posId: number; timestamp: string; type?: string },
+  ) => {
     setIsDetailOpen(true);
     setIsLoadingDetail(true);
     setDetailSimaksi(null);
     setDetailError(null);
     setDetailGearKodes(null);
+    setDetailFromLog(fromLog ?? null);
+    setDetailLastScan(undefined);
     try {
       getSimaksiGear(simaksiId).then(g => setDetailGearKodes(g.map(x => x.kode)));
       const detail = await getSimaksiDetail(simaksiId);
-      if (detail) setDetailSimaksi(detail);
-      else setDetailError('Detail SIMAKSI tidak ditemukan.');
+      if (detail) {
+        setDetailSimaksi(detail);
+        // Posisi aktual: scan terakhir dari seluruh anggota rombongan.
+        const ids = [detail.ketua?.userId, ...detail.members.map(m => m.userId)].filter(Boolean) as string[];
+        getLastScanForUsers(ids).then(setDetailLastScan);
+      } else {
+        setDetailError('Detail SIMAKSI tidak ditemukan.');
+      }
     } catch (err) {
       console.warn('[DASHBOARD] Gagal memuat detail SIMAKSI:', err);
       setDetailError('Gagal memuat detail SIMAKSI. Periksa koneksi lalu coba lagi.');
@@ -338,6 +354,8 @@ export default function AdminDashboard() {
     setIsDetailOpen(false);
     setDetailSimaksi(null);
     setDetailError(null);
+    setDetailFromLog(null);
+    setDetailLastScan(undefined);
   };
 
   const handleApprove = async (item: any) => {
@@ -1031,7 +1049,11 @@ export default function AdminDashboard() {
             return (
             <button
               key={`${log.id}-${log.timestamp}`}
-              onClick={() => clickable && openSimaksiDetail(log.simaksiId as number)}
+              onClick={() => clickable && openSimaksiDetail(log.simaksiId as number, {
+                posId: log.posId ?? 0,
+                timestamp: log.timestamp,
+                type: isCheckout ? 'CHECK_OUT' : (log.type || 'POST_CHECK'),
+              })}
               disabled={!clickable}
               title={clickable ? 'Lihat detail SIMAKSI' : 'Detail SIMAKSI tidak tersedia untuk log ini'}
               className={`w-full text-left p-4 flex items-center justify-between transition-colors ${isCheckout ? 'bg-rose-50' : ''} ${
@@ -1337,6 +1359,77 @@ export default function AdminDashboard() {
                       </p>
                     </div>
                   )}
+
+                  {/* Konteks pemindaian: baris log yang diklik + posisi aktual */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {detailFromLog && (
+                      <div className="p-4 bg-sky-50/60 rounded-3xl border border-sky-100 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                          <span className="text-[10px] font-black text-sky-600 uppercase tracking-widest">
+                            {detailFromLog.type === 'CHECK_OUT' ? 'Lapor Pulang' : 'Check-In Ini'}
+                          </span>
+                        </div>
+                        {detailFromLog.type === 'CHECK_OUT' ? (
+                          <p className="font-black text-slate-800 text-sm leading-tight">Kepulangan Tercatat</p>
+                        ) : (
+                          <>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              Pos {detailFromLog.posId}
+                            </p>
+                            <p className="font-black text-slate-800 text-sm leading-tight break-words">
+                              {MOUNTAIN_POS[detailFromLog.posId]?.name?.replace(/^Pos \d+: /, '') || 'Lokasi Tidak Diketahui'}
+                            </p>
+                          </>
+                        )}
+                        <p className="text-[10px] font-bold text-slate-500 mt-1.5">
+                          {new Date(detailFromLog.timestamp).toLocaleString('id-ID', {
+                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className={`p-4 rounded-3xl border min-w-0 ${
+                      detailFromLog ? 'bg-emerald-50/60 border-emerald-100' : 'bg-emerald-50/60 border-emerald-100 sm:col-span-2'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Navigation className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Posisi Terakhir</span>
+                      </div>
+
+                      {detailLastScan === undefined ? (
+                        <p className="text-[11px] font-bold text-slate-400 italic">Memuat…</p>
+                      ) : detailLastScan === null ? (
+                        <p className="text-[11px] font-bold text-slate-400 leading-relaxed">
+                          Belum ada pemindaian pos untuk rombongan ini.
+                        </p>
+                      ) : detailLastScan.validationStatus === 'checkout' ? (
+                        <>
+                          <p className="font-black text-slate-800 text-sm leading-tight">Sudah Lapor Pulang</p>
+                          <p className="text-[10px] font-bold text-slate-500 mt-1.5">
+                            {new Date(detailLastScan.scannedAt).toLocaleString('id-ID', {
+                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                            })}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                            Pos {detailLastScan.posId} · {MOUNTAIN_POS[detailLastScan.posId]?.elevation ?? '-'} mdpl
+                          </p>
+                          <p className="font-black text-slate-800 text-sm leading-tight break-words">
+                            {MOUNTAIN_POS[detailLastScan.posId]?.name?.replace(/^Pos \d+: /, '') || 'Lokasi Tidak Diketahui'}
+                          </p>
+                          <p className="text-[10px] font-bold text-slate-500 mt-1.5">
+                            {new Date(detailLastScan.scannedAt).toLocaleString('id-ID', {
+                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                            })}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
