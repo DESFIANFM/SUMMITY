@@ -66,6 +66,8 @@ export interface SimaksiRequest {
   status: SimaksiStatus;
   createdAt: string;
   members: { id: string; name: string }[];
+  /** Kode barang wajib yang dicentang ketua, mis. ['TENDA_DOME', ...] */
+  checkedGears?: string[];
   synced?: boolean;
   simaksiId?: number;
 }

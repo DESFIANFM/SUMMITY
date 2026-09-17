@@ -8,11 +8,13 @@ import {
   rejectSimaksi,
   getSimaksiDetail,
   getHikerStatuses,
+  getMandatoryGear,
+  getSimaksiGear,
 } from '../../lib/db';
-import type { SimaksiDetail, SimaksiPersonDetail, HikerStatusRow, HikerTripStatus } from '../../lib/db';
+import type { SimaksiDetail, SimaksiPersonDetail, HikerStatusRow, HikerTripStatus, GearItem } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog } from '../../types';
-import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map, Phone, MapPin, CreditCard, Crown } from 'lucide-react';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map, Phone, MapPin, CreditCard, Crown, CheckSquare, Square, Package } from 'lucide-react';
 import { formatDateRange, formatSingleDate } from '../../lib/formatters';
 import GPSMap from '../../components/GPSMap';
 
@@ -127,6 +129,10 @@ export default function AdminDashboard() {
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
+  // Ceklis perlengkapan: katalog lengkap + kode yang dicentang pendaki
+  const [gearCatalog, setGearCatalog] = useState<GearItem[]>([]);
+  const [detailGearKodes, setDetailGearKodes] = useState<string[] | null>(null);
+
   // Pencarian pendaki + filter status perjalanan
   const [hikers, setHikers] = useState<HikerStatusRow[]>([]);
   const [hikerQuery, setHikerQuery] = useState('');
@@ -235,6 +241,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchData();
+    getMandatoryGear().then(setGearCatalog);
   }, []);
 
   const openSimaksiDetail = async (simaksiId: number) => {
@@ -242,7 +249,9 @@ export default function AdminDashboard() {
     setIsLoadingDetail(true);
     setDetailSimaksi(null);
     setDetailError(null);
+    setDetailGearKodes(null);
     try {
+      getSimaksiGear(simaksiId).then(g => setDetailGearKodes(g.map(x => x.kode)));
       const detail = await getSimaksiDetail(simaksiId);
       if (detail) setDetailSimaksi(detail);
       else setDetailError('Detail SIMAKSI tidak ditemukan.');
@@ -1128,6 +1137,52 @@ export default function AdminDashboard() {
                       <p className="text-xs font-bold text-rose-700 mt-1 leading-relaxed">{detailSimaksi.catatanVerifikator}</p>
                     </div>
                   )}
+
+                  {/* Ceklis perlengkapan wajib — hanya untuk dilihat petugas */}
+                  <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Package className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Perlengkapan Wajib</span>
+                      </div>
+                      {detailGearKodes && gearCatalog.length > 0 && (
+                        <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg shrink-0 ${
+                          detailGearKodes.length >= gearCatalog.length
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          {detailGearKodes.length}/{gearCatalog.length}
+                        </span>
+                      )}
+                    </div>
+
+                    {detailGearKodes === null ? (
+                      <p className="text-[10px] font-bold text-slate-300 italic">Memuat…</p>
+                    ) : detailGearKodes.length === 0 ? (
+                      <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                        Ceklis tidak tercatat. SIMAKSI ini diajukan sebelum pencatatan
+                        perlengkapan diaktifkan — periksa barang secara langsung.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                        {gearCatalog.map(item => {
+                          const dicentang = detailGearKodes.includes(item.kode);
+                          return (
+                            <div key={item.kode} className="flex items-start gap-2">
+                              {dicentang
+                                ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                : <Square className="w-3.5 h-3.5 text-slate-300 shrink-0 mt-0.5" />}
+                              <span className={`text-[11px] font-bold leading-tight ${
+                                dicentang ? 'text-slate-700' : 'text-slate-300'
+                              }`}>
+                                {item.namaBarang}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
 
                   {detailSimaksi.ketua && <PersonCard person={detailSimaksi.ketua} isKetua={true} />}
 

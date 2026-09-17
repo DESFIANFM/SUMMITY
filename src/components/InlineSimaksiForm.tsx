@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { saveSimaksi, findPendaki } from '../lib/db';
+import { saveSimaksi, getMandatoryGear, GearItem, PendakiRef } from '../lib/db';
+import MemberSearchInput from './MemberSearchInput';
 import {
   Mountain,
   Calendar,
@@ -17,20 +18,6 @@ interface InlineSimaksiFormProps {
   onCancel: () => void;
 }
 
-const MANDATORY_ITEMS = [
-  { id: 'TENDA_DOME', label: 'Tenda Dome (Sesuai Kapasitas)', category: 'Kelompok' },
-  { id: 'KOMPOR_PORTABLE', label: 'Kompor Portable', category: 'Kelompok' },
-  { id: 'NESTING', label: 'Nesting / Wadah Memasak', category: 'Kelompok' },
-  { id: 'P3K', label: 'P3K & Obat-obatan', category: 'Kelompok' },
-  { id: 'TRASH_BAG', label: 'Kantong Sampah / Trash Bag', category: 'Kelompok' },
-  { id: 'HEADLAMP', label: 'Headlamp', category: 'Pribadi' },
-  { id: 'JAKET_GUNUNG', label: 'Jaket Gunung', category: 'Pribadi' },
-  { id: 'SEPATU_HIKING', label: 'Sepatu Hiking', category: 'Pribadi' },
-  { id: 'SLEEPING_BAG', label: 'Sleeping Bag', category: 'Pribadi' },
-  { id: 'RAINCOAT', label: 'Jas Hujan', category: 'Pribadi' },
-];
-
-const initialGears = Object.fromEntries(MANDATORY_ITEMS.map(item => [item.id, false]));
 
 export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksiFormProps) {
   const { user } = useAuth();
@@ -41,70 +28,37 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
   const [memberList, setMemberList] = useState<{ id: string; name: string }[]>([]);
   const [memberError, setMemberError] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [checkedGears, setCheckedGears] = useState<Record<string, boolean>>(initialGears);
+  // Katalog barang wajib diambil dari tabel mandatory_gear, bukan ditulis
+  // di kode, supaya petugas bisa mengubah daftarnya lewat database.
+  const [gearList, setGearList] = useState<GearItem[]>([]);
+  const [checkedGears, setCheckedGears] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    getMandatoryGear().then(setGearList);
+  }, []);
 
   const [climbData, setClimbData] = useState({
     date: '',
     endDate: '',
   });
 
-  const handleAddMember = async () => {
-    setMemberError('');
-    const inputId = memberIdInput.trim().toUpperCase();
-    if (!inputId) {
-      setMemberError('Silakan masukkan ID Pendaki yang valid');
-      return;
-    }
-
+  /**
+   * Validasi pilihan dari pencarian. Mengembalikan pesan error bila ditolak,
+   * atau null bila anggota berhasil ditambahkan.
+   */
+  const handlePickMember = (p: PendakiRef): string | null => {
+    const picked = (p.idPendaki || p.id || '').toUpperCase();
     const loggedInId = ((user as any)?.id_pendaki || (user as any)?.idPendaki || (user as any)?.displayId || user?.id || '').toUpperCase();
-    if (inputId === loggedInId) {
-      setMemberError('Anda adalah ketua kelompok. Tidak perlu menambahkan ID Anda sendiri sebagai anggota.');
-      return;
+
+    if (picked === loggedInId) {
+      return 'Anda ketua kelompok, tidak perlu menambahkan diri sendiri.';
+    }
+    if (memberList.some(m => m.id.toUpperCase() === picked)) {
+      return 'Pendaki ini sudah ada di daftar rombongan.';
     }
 
-    if (memberList.some(m => m.id.toUpperCase() === inputId)) {
-      setMemberError('Pendaki dengan ID ini sudah ditambahkan ke kelompok.');
-      return;
-    }
-
-    // 1. Cek localStorage — tapi hanya pakai kalau ada nama
-    let resolvedName: string | null = null;
-    let resolvedId: string = inputId;
-    try {
-      const usersListStr = localStorage.getItem('summity_users_list');
-      if (usersListStr) {
-        const usersList = JSON.parse(usersListStr);
-        const found = usersList.find((u: any) => {
-          const ids = [u.id, u.displayId, u.id_pendaki, u.idPendaki]
-            .filter(Boolean)
-            .map((v: any) => String(v).toUpperCase());
-          return ids.includes(inputId);
-        });
-        if (found?.name) {
-          resolvedName = found.name;
-          resolvedId = found.id_pendaki || found.idPendaki || found.displayId || found.id || inputId;
-        }
-      }
-    } catch (_) {}
-
-    // 2. Kalau nama tidak ada di localStorage, lookup lewat RPC.
-    //    Query langsung ke tabel `users` tidak dipakai lagi: setelah RLS
-    //    dikunci (0003) seorang pendaki tidak boleh membaca baris pendaki
-    //    lain, jadi pencarian anggota harus lewat find_pendaki.
-    if (!resolvedName) {
-      const found = await findPendaki(inputId);
-      if (found?.name) {
-        resolvedName = found.name;
-        resolvedId = found.idPendaki || inputId;
-      }
-    }
-
-    if (resolvedName) {
-      setMemberList([...memberList, { id: resolvedId, name: resolvedName }]);
-      setMemberIdInput('');
-    } else {
-      setMemberError(`Pendaki dengan ID "${inputId}" tidak ditemukan.`);
-    }
+    setMemberList([...memberList, { id: p.idPendaki || p.id, name: p.name }]);
+    return null;
   };
 
   const handleRemoveMember = (idx: number) => {
@@ -116,7 +70,7 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
   };
 
   const checkedCount = Object.values(checkedGears).filter(Boolean).length;
-  const allGearChecked = checkedCount === MANDATORY_ITEMS.length;
+  const allGearChecked = gearList.length > 0 && checkedCount === gearList.length;
   const canSubmit = !isLeader || allGearChecked;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -147,6 +101,9 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
       status: 'pending',
       createdAt: new Date().toISOString(),
       members: isLeader ? memberList : [],
+      // Disimpan sebagai riwayat di simaksi_mandatory_gear supaya petugas
+      // bisa melihat apa yang dinyatakan pendaki saat memverifikasi.
+      checkedGears: Object.keys(checkedGears).filter(k => checkedGears[k]),
     });
 
     setClimbSubmitted(true);
@@ -247,7 +204,7 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
               checked={isLeader}
               onChange={(e) => {
                 setIsLeader(e.target.checked);
-                if (!e.target.checked) setCheckedGears(initialGears);
+                if (!e.target.checked) setCheckedGears({});
               }}
               className="peer h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 accent-emerald-600"
             />
@@ -263,28 +220,7 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
               <span className="block text-[8px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
                 <Users className="w-3 h-3 text-emerald-600" /> Tambah Anggota Rombongan
               </span>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={memberIdInput}
-                  onChange={(e) => setMemberIdInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMember(); } }}
-                  placeholder="ID PENDAKI (U-XXXX)"
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold font-mono uppercase focus:outline-none focus:border-emerald-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddMember}
-                  className="bg-slate-900 text-white font-black px-4 rounded-xl text-[9px] uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              {memberError && (
-                <p className="text-[8px] text-rose-500 font-bold ml-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> {memberError}
-                </p>
-              )}
+              <MemberSearchInput onPick={handlePickMember} />
 
               {memberList.length > 0 ? (
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
@@ -323,28 +259,28 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
                 </div>
 
                 <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
-                  {MANDATORY_ITEMS.map((item) => (
+                  {gearList.map((item) => (
                     <div
-                      key={item.id}
-                      onClick={() => handleToggleGear(item.id)}
+                      key={item.kode}
+                      onClick={() => handleToggleGear(item.kode)}
                       className={`flex items-start gap-2.5 p-2 rounded-xl border text-[10px] font-bold cursor-pointer transition-all select-none ${
-                        checkedGears[item.id]
+                        checkedGears[item.kode]
                           ? 'bg-emerald-50 bg-opacity-40 border-emerald-200 text-emerald-800'
                           : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
                       <input
                         type="checkbox"
-                        checked={checkedGears[item.id] || false}
+                        checked={checkedGears[item.kode] || false}
                         readOnly
                         className="peer h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 accent-emerald-600 mt-0.5 pointer-events-none"
                       />
                       <div className="flex-1 flex justify-between gap-2">
-                        <span className="uppercase">{item.label}</span>
+                        <span className="uppercase">{item.namaBarang}</span>
                         <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded leading-none ${
-                          item.category === 'Kelompok' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                          item.kategori === 'KELOMPOK' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
                         }`}>
-                          {item.category}
+                          {item.kategori}
                         </span>
                       </div>
                     </div>
@@ -373,7 +309,7 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
         >
           {canSubmit
             ? 'Kirim Pengajuan SIMAKSI'
-            : `Lengkapi Perlengkapan (${checkedCount}/${MANDATORY_ITEMS.length})`
+            : `Lengkapi Perlengkapan (${checkedCount}/${gearList.length})`
           }
         </button>
       </div>

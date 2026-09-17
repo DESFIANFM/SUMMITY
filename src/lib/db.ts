@@ -723,6 +723,9 @@
         }
       }
 
+      // 3. Catat ceklis perlengkapan sebagai riwayat
+      await simpanCeklisGear(simaksiId, (data.checkedGears as string[]) || []);
+
       // 4. Tandai sebagai synced di IndexedDB
       const db = await initDB();
       const tx = db.transaction(SIMAKSI_STORE, 'readwrite');
@@ -741,6 +744,94 @@
       console.warn('[SIMAKSI] Sync gagal:', err);
       return false;
     }
+  }
+
+  // --------------------------------------------------------------------
+  // PERLENGKAPAN WAJIB
+  //
+  // Katalog barang ada di tabel `mandatory_gear`; ceklis tiap pengajuan
+  // tersimpan di `simaksi_mandatory_gear` sebagai riwayat, sehingga petugas
+  // bisa melihat apa yang dinyatakan pendaki saat memverifikasi.
+  // --------------------------------------------------------------------
+
+  export interface GearItem {
+    id: number;
+    kode: string;
+    namaBarang: string;
+    kategori: string;
+  }
+
+  /** Katalog barang wajib yang aktif. Dipakai form pendaki & panel petugas. */
+  export async function getMandatoryGear(): Promise<GearItem[]> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from('mandatory_gear')
+      .select('id, kode, nama_barang, kategori')
+      .eq('aktif', true)
+      .order('id');
+
+    if (error) {
+      console.warn('[GEAR] Gagal fetch katalog:', error.message);
+      return [];
+    }
+    return (data || []).map((g: any) => ({
+      id: g.id,
+      kode: g.kode,
+      namaBarang: g.nama_barang,
+      kategori: g.kategori,
+    }));
+  }
+
+  /**
+   * Catat ceklis perlengkapan sebuah simaksi.
+   *
+   * Form menyimpan pilihan sebagai `kode` (mis. TENDA_DOME) karena itu yang
+   * stabil dan terbaca saat data menunggu di IndexedDB. Pemetaan ke id
+   * numerik dilakukan di sini, tepat sebelum insert.
+   */
+  async function simpanCeklisGear(simaksiId: number, kodeTercentang: string[]) {
+    const supabase = getSupabaseClient();
+    if (!supabase || !kodeTercentang?.length) return;
+
+    const katalog = await getMandatoryGear();
+    if (!katalog.length) return;
+
+    const rows = katalog
+      .filter(g => kodeTercentang.includes(g.kode))
+      .map(g => ({ simaksi_id: simaksiId, mandatory_gear_id: g.id, tersedia: true }));
+
+    if (!rows.length) return;
+
+    // Unique index (simaksi_id, mandatory_gear_id) membuat sync yang
+    // terulang tidak menghasilkan baris ganda.
+    const { error } = await supabase
+      .from('simaksi_mandatory_gear')
+      .upsert(rows, { onConflict: 'simaksi_id,mandatory_gear_id' });
+
+    if (error) console.warn('[GEAR] Gagal simpan ceklis:', error.message);
+  }
+
+  /** Ceklis perlengkapan satu simaksi, untuk ditampilkan ke petugas. */
+  export async function getSimaksiGear(simaksiId: number): Promise<GearItem[]> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from('simaksi_mandatory_gear')
+      .select('mandatory_gear_id, tersedia, mandatory_gear(id, kode, nama_barang, kategori)')
+      .eq('simaksi_id', simaksiId)
+      .eq('tersedia', true);
+
+    if (error) {
+      console.warn('[GEAR] Gagal fetch ceklis simaksi:', error.message);
+      return [];
+    }
+    return (data || [])
+      .map((r: any) => r.mandatory_gear)
+      .filter(Boolean)
+      .map((g: any) => ({ id: g.id, kode: g.kode, namaBarang: g.nama_barang, kategori: g.kategori }));
   }
 
   // --------------------------------------------------------------------
@@ -774,6 +865,27 @@
       idPendaki: (data as any).id_pendaki ?? null,
       name: (data as any).name || 'Pendaki',
     };
+  }
+
+  /**
+   * Cari pendaki dengan ID Pendaki ATAU potongan nama.
+   * Butuh minimal 3 karakter; maksimal 8 hasil (dibatasi di sisi database).
+   */
+  export async function searchPendaki(query: string): Promise<PendakiRef[]> {
+    const supabase = getSupabaseClient();
+    const q = (query || '').trim();
+    if (!supabase || q.length < 3) return [];
+
+    const { data, error } = await supabase.rpc('search_pendaki', { p_query: q });
+    if (error) {
+      console.warn('[PENDAKI] search_pendaki gagal:', error.message);
+      return [];
+    }
+    return ((data as any[]) || []).map(u => ({
+      id: u.id,
+      idPendaki: u.id_pendaki ?? null,
+      name: u.name || 'Pendaki',
+    }));
   }
 
   /** Anggota sebuah simaksi. Array kosong bila pemanggil tidak berhak. */
