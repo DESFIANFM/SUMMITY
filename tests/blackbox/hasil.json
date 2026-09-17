@@ -1,0 +1,278 @@
+{
+  "A1": {
+    "status": "Valid",
+    "aktual": "Masuk ke dashboard pendaki (/)"
+  },
+  "A2": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Username atau password salah.”"
+  },
+  "A3": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Username atau password salah.”"
+  },
+  "A4": {
+    "status": "Valid",
+    "aktual": "Form tidak terkirim; browser menolak field kosong (“Please fill out this field.”)"
+  },
+  "A5": {
+    "status": "Tidak Valid",
+    "aktual": "Pesan tidak muncul; langsung masuk ke dashboard petugas (Dashboard Monitor)"
+  },
+  "A6": {
+    "status": "Valid",
+    "aktual": "Masuk ke dashboard petugas (“Dashboard Monitor”)"
+  },
+  "A7": {
+    "status": "Tidak Valid",
+    "aktual": "Pesan tidak muncul; langsung masuk ke dashboard pendaki"
+  },
+  "B2": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Username minimal 4 karakter”"
+  },
+  "B3": {
+    "status": "Valid",
+    "aktual": "Diterima, lanjut ke tahap Data Diri"
+  },
+  "B4": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Password minimal 6 karakter”"
+  },
+  "B5": {
+    "status": "Valid",
+    "aktual": "Diterima, lanjut ke tahap Data Diri"
+  },
+  "B6": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Konfirmasi password tidak cocok”"
+  },
+  "B7": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Format email tidak valid”"
+  },
+  "B10": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Nomor harus diawali 8 (contoh: 81234567890)”"
+  },
+  "B11": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Nomor harus 7–11 digit setelah +62”"
+  },
+  "B12": {
+    "status": "Valid",
+    "aktual": "Input hanya menerima 11 digit (“81234567890”); tidak ada pesan, lanjut ke tahap Data Diri"
+  },
+  "B8": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “NIK harus tepat 16 digit”"
+  },
+  "B9": {
+    "status": "Valid",
+    "aktual": "Diterima, lanjut ke tahap Alamat"
+  },
+  "B1": {
+    "status": "Valid",
+    "aktual": "Akun berhasil dibuat; tampil layar “Cek Email Anda” karena konfirmasi email aktif"
+  },
+  "B13": {
+    "status": "Tidak Valid",
+    "aktual": "Muncul pesan mengandung “gagal disimpan”"
+  },
+  "B14": {
+    "status": "Tidak Valid",
+    "aktual": "Muncul pesan mengandung “gagal disimpan”"
+  },
+  "B15": {
+    "status": "Tidak Valid",
+    "aktual": "Muncul pesan mengandung “gagal disimpan”"
+  },
+  "C1": {
+    "status": "Valid",
+    "aktual": "Muncul “Email Terkirim”; server menerima dan mengirim permintaan. Kotak masuk alamat uji tidak dapat diperiksa"
+  },
+  "C2": {
+    "status": "Valid",
+    "aktual": "Form tidak terkirim; browser menolak format email (“Please include an '@' in the email address. 'pendaki.gmail.com' is missing an '@'.”)"
+  },
+  "C3": {
+    "status": "Valid",
+    "aktual": "Tetap muncul “Email Terkirim” (tidak membocorkan bahwa email belum terdaftar)"
+  },
+  "C4": {
+    "status": "Valid",
+    "aktual": "Tampil halaman form password baru (/reset-password)"
+  },
+  "C5": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Password minimal 6 karakter.”"
+  },
+  "C6": {
+    "status": "Valid",
+    "aktual": "Muncul pesan “Konfirmasi password tidak cocok.”"
+  },
+  "C7": {
+    "status": "Tidak Valid",
+    "aktual": "Muncul “Password Diperbarui”, tetapi dialihkan ke dashboard pendaki (/) dalam keadaan sudah login, bukan ke halaman login"
+  },
+  "C8": {
+    "status": "Valid",
+    "aktual": "Berhasil masuk dengan password baru"
+  },
+  "C9": {
+    "status": "Valid",
+    "aktual": "Ditolak: “Username atau password salah.”"
+  },
+  "D8": {
+    "status": "Valid",
+    "aktual": "Saat ketua tampil 14 barang; setelah dibatalkan tampil 9 barang"
+  },
+  "D4": {
+    "status": "Tidak Valid",
+    "aktual": "Tombol nonaktif bertuliskan “LENGKAPI PERLENGKAPAN (5/14)”"
+  },
+  "D1": {
+    "status": "Valid",
+    "aktual": "Pengajuan tidak terkirim; browser menolak tanggal naik kosong (“Please fill out this field.”)"
+  },
+  "D2": {
+    "status": "Valid",
+    "aktual": "Pengajuan tidak terkirim; browser menolak tanggal turun kosong (“Please fill out this field.”)"
+  },
+  "D3": {
+    "status": "Valid",
+    "aktual": "Pengajuan tidak terkirim; browser menolak tanggal turun (“Value must be 28/09/2026 or later.”)"
+  },
+  "D5": {
+    "status": "Valid",
+    "aktual": "Tombol aktif (“KIRIM PENGAJUAN SIMAKSI”); muncul “SIMAKSI Berhasil Terdaftar!”"
+  },
+  "E1": {
+    "status": "Valid",
+    "aktual": "Muncul “Ketik minimal 3 karakter untuk mencari nama.”"
+  },
+  "E2": {
+    "status": "Valid",
+    "aktual": "Muncul daftar hasil berisi “Amani”"
+  },
+  "E3": {
+    "status": "Valid",
+    "aktual": "Pencarian ID 202609170002 menampilkan “Amani”"
+  },
+  "E7": {
+    "status": "Valid",
+    "aktual": "Baris hasil hanya berisi “Amani 202609170002” (nama dan ID Pendaki); NIK dan telepon tidak tampil"
+  },
+  "E4": {
+    "status": "Valid",
+    "aktual": "Muncul “Tidak ada pendaki yang cocok.”"
+  },
+  "E5": {
+    "status": "Valid",
+    "aktual": "Muncul “Anda ketua kelompok, tidak perlu menambahkan diri sendiri.”"
+  },
+  "E6": {
+    "status": "Valid",
+    "aktual": "Muncul “Pendaki ini sudah ada di daftar rombongan.”"
+  },
+  "D6": {
+    "status": "Valid",
+    "aktual": "Tombol nonaktif bertuliskan “LENGKAPI PERLENGKAPAN (12/14)”"
+  },
+  "D9": {
+    "status": "Valid",
+    "aktual": "Setelah batal jadi ketua tombol aktif (“KIRIM PENGAJUAN SIMAKSI”); setelah jadi ketua lagi “LENGKAPI PERLENGKAPAN (9/14)”"
+  },
+  "D7": {
+    "status": "Valid",
+    "aktual": "Tombol “KIRIM PENGAJUAN SIMAKSI”; muncul “SIMAKSI Berhasil Terdaftar!”"
+  },
+  "G1": {
+    "status": "Valid",
+    "aktual": "Banner “SIMAKSI Dalam Proses”"
+  },
+  "F1": {
+    "status": "Valid",
+    "aktual": "Tampil detail beserta ceklis perlengkapan wajib (14/14)"
+  },
+  "F2": {
+    "status": "Valid",
+    "aktual": "Status menjadi approved (SMK-202609-0042); hilang dari daftar permohonan"
+  },
+  "F3": {
+    "status": "Valid",
+    "aktual": "Status menjadi rejected; alasan tersimpan: “Uji penolakan: kuota pendakian pada tanggal tersebut sudah penuh”"
+  },
+  "F4": {
+    "status": "Valid",
+    "aktual": "Tampil pemberitahuan penolakan beserta alasan “Uji penolakan: kuota pendakian pada tanggal tersebut sudah penuh”"
+  },
+  "G2": {
+    "status": "Valid",
+    "aktual": "Banner “SIMAKSI Telah Disetujui” beserta pesan keselamatan dan “Jangan lupa bawa turun sampahmu!!”"
+  },
+  "H1": {
+    "status": "Valid",
+    "aktual": "Tampil “Basecamp Bambangan”; tercatat di riwayat (pos 0, 10:27:23 UTC)"
+  },
+  "G3": {
+    "status": "Valid",
+    "aktual": "Banner berubah menjadi “Sedang Dalam Perjalanan”"
+  },
+  "H2": {
+    "status": "Valid",
+    "aktual": "Baris “Basecamp Bambangan ↑ 1” pada Sebaran Pendaki; rombongan SMK-202609-0042 (Lubna) tercantum di pos tersebut"
+  },
+  "I2": {
+    "status": "Valid",
+    "aktual": "Modal “Rombongan di Pos — Basecamp Bambangan” terbuka, berisi SMK-202609-0042 · Lubna"
+  },
+  "I3": {
+    "status": "Valid",
+    "aktual": "Pada “Basecamp Bambangan ↑ 1”, klik rombongan “SMK-43 IQBAL · 1 PENDAKI” membuka rincian berisi bagian Ketua dan Anggota; klik kedua menutup kembali"
+  },
+  "I4": {
+    "status": "Valid",
+    "aktual": "Pos kosong “Pos 1: Pondok Gembirung” tidak dapat dibuka (tombol nonaktif)"
+  },
+  "I1": {
+    "status": "Valid",
+    "aktual": "Klik baris log “SMK-202609-0042 - Lubna LUBNA • BASECAMP BAMBANGAN 05:27 PM POST CHECK” membuka detail dengan kartu “Pos Check Log” dan “Posisi Terakhir”"
+  },
+  "I5": {
+    "status": "Valid",
+    "aktual": "Daftar tersaring menjadi 1/41 PENDAKI, berisi Rendita"
+  },
+  "I6": {
+    "status": "Valid",
+    "aktual": "Tersaring 7/41 PENDAKI; hanya berstatus “Masih di Perjalanan”, termasuk Lubna"
+  },
+  "H4": {
+    "status": "Valid",
+    "aktual": "Muncul “QR tidak dikenal. Gunakan QR kepulangan dari aplikasi pendaki.”"
+  },
+  "H3": {
+    "status": "Valid",
+    "aktual": "Muncul “Pendaki berhasil checkout”; status SIMAKSI SMK-202609-0042 menjadi complete"
+  },
+  "G4": {
+    "status": "Valid",
+    "aktual": "Banner “SIMAKSI Telah Disetujui” (riwayat scan 1 Agustus tidak memengaruhi)"
+  },
+  "J1": {
+    "status": "Valid",
+    "aktual": "Membuka /scanner sebagai pendaki berakhir di /"
+  },
+  "J3": {
+    "status": "Valid",
+    "aktual": "Setelah logout di /login; membuka / kembali dialihkan ke /login"
+  },
+  "J2": {
+    "status": "Valid",
+    "aktual": "Membuka /tickets tanpa login berakhir di /login"
+  },
+  "J4": {
+    "status": "Valid",
+    "aktual": "Permintaan ubah status ke approved mengubah 0 baris; status tetap rejected"
+  }
+}

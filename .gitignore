@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# gambar QR hasil generate skrip black box
+tests/blackbox/qr/
