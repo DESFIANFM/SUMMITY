@@ -10,13 +10,15 @@ import {
   getHikerStatuses,
   getMandatoryGear,
   getSimaksiGear,
+  getSimaksiMembers,
 } from '../../lib/db';
 import type { SimaksiDetail, SimaksiPersonDetail, HikerStatusRow, HikerTripStatus, GearItem } from '../../lib/db';
 import { MOUNTAIN_POS } from '../../lib/mockData';
 import { ScanLog } from '../../types';
-import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map, Phone, MapPin, CreditCard, Crown, CheckSquare, Square, Package } from 'lucide-react';
+import { Users, User, TrendingUp, Mail, Check, X, Calendar, ChevronLeft, ChevronRight, Info, QrCode, Printer, RefreshCw, Search, Map, Phone, MapPin, CreditCard, Crown, CheckSquare, Square, Package, ChevronDown, Mountain } from 'lucide-react';
 import { formatDateRange, formatSingleDate } from '../../lib/formatters';
 import GPSMap from '../../components/GPSMap';
+import { motion, AnimatePresence } from 'motion/react';
 
 // Label + warna untuk tiap status perjalanan pendaki, dipakai chip filter & badge.
 const HIKER_STATUS_META: Record<HikerTripStatus, { label: string; short: string; dot: string; chip: string; badge: string }> = {
@@ -49,6 +51,15 @@ const HIKER_STATUS_META: Record<HikerTripStatus, { label: string; short: string;
     badge: 'bg-slate-50 text-slate-500 border-slate-200',
   },
 };
+
+/** Satu rombongan yang sedang berada di sebuah pos. */
+interface PosSimaksi {
+  key: string;
+  simaksiId: number | null;
+  kodeSimaksi: string;
+  ketuaName: string;
+  pendaki: { name: string; direction: 'ASCENT' | 'DESCENT' }[];
+}
 
 const HIKER_STATUS_ORDER: HikerTripStatus[] = ['DI_PERJALANAN', 'SUDAH_PULANG', 'MENUNGGU', 'TIDAK_ADA'];
 
@@ -131,6 +142,12 @@ export default function AdminDashboard() {
 
   // Ceklis perlengkapan: katalog lengkap + kode yang dicentang pendaki
   const [gearCatalog, setGearCatalog] = useState<GearItem[]>([]);
+
+  // Rincian penghuni tiap pos, untuk modal "Sebaran Pendaki"
+  const [posOccupants, setPosOccupants] = useState<Record<number, PosSimaksi[]>>({});
+  const [openPosId, setOpenPosId] = useState<number | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [memberCache, setMemberCache] = useState<Record<number, { id: string; name: string }[]>>({});
   const [detailGearKodes, setDetailGearKodes] = useState<string[] | null>(null);
 
   // Pencarian pendaki + filter status perjalanan
@@ -212,7 +229,12 @@ export default function AdminDashboard() {
       setIsLoadingSimaksi(false);
     }
 
-    const latestScansByTicket: Record<string, { posId: number; type: string; direction: 'ASCENT' | 'DESCENT' }> = {};
+    // Selain jumlah per pos, kumpulkan juga SIAPA yang ada di sana supaya
+    // daftar pos bisa diklik untuk melihat rinciannya.
+    const latestScansByTicket: Record<string, {
+      posId: number; type: string; direction: 'ASCENT' | 'DESCENT';
+      simaksiId: number | null; kodeSimaksi: string; ketuaName: string; anggotaName: string;
+    }> = {};
     const sortedScans = [...scans].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     const ticketPeaks: Record<string, boolean> = {};
 
@@ -223,19 +245,47 @@ export default function AdminDashboard() {
       latestScansByTicket[scan.ticketId] = {
         posId: scan.posId ?? 0,
         type: scan.type || 'POST_CHECK',
-        direction: isDescent ? 'DESCENT' : 'ASCENT'
+        direction: isDescent ? 'DESCENT' : 'ASCENT',
+        simaksiId: typeof scan.simaksiId === 'number' ? scan.simaksiId : null,
+        kodeSimaksi: scan.kodeSimaksi || '',
+        ketuaName: scan.ketuaName || 'Ketua',
+        anggotaName: scan.anggotaName || 'Pendaki',
       };
     });
 
     const locationCounts: Record<number, { ascent: number, descent: number }> = {};
+    const occupants: Record<number, PosSimaksi[]> = {};
+
     Object.values(latestScansByTicket).forEach(status => {
-      if (status.type !== 'CHECK_OUT') {
-        if (!locationCounts[status.posId]) locationCounts[status.posId] = { ascent: 0, descent: 0 };
-        if (status.direction === 'ASCENT') locationCounts[status.posId].ascent += 1;
-        else locationCounts[status.posId].descent += 1;
+      if (status.type === 'CHECK_OUT') return;  // sudah lapor pulang
+
+      if (!locationCounts[status.posId]) locationCounts[status.posId] = { ascent: 0, descent: 0 };
+      if (status.direction === 'ASCENT') locationCounts[status.posId].ascent += 1;
+      else locationCounts[status.posId].descent += 1;
+
+      // Kelompokkan per rombongan. Log lama tanpa simaksiId dikelompokkan
+      // sendiri memakai kode simaksi/nama sebagai kunci cadangan.
+      const key = status.simaksiId !== null
+        ? `s${status.simaksiId}`
+        : `k${status.kodeSimaksi || status.ketuaName}`;
+
+      if (!occupants[status.posId]) occupants[status.posId] = [];
+      let grup = occupants[status.posId].find(g => g.key === key);
+      if (!grup) {
+        grup = {
+          key,
+          simaksiId: status.simaksiId,
+          kodeSimaksi: status.kodeSimaksi || '(tanpa kode)',
+          ketuaName: status.ketuaName,
+          pendaki: [],
+        };
+        occupants[status.posId].push(grup);
       }
+      grup.pendaki.push({ name: status.anggotaName, direction: status.direction });
     });
+
     setHikerLocations(locationCounts);
+    setPosOccupants(occupants);
     setLastRefresh(new Date());
   };
 
@@ -260,6 +310,27 @@ export default function AdminDashboard() {
       setDetailError('Gagal memuat detail SIMAKSI. Periksa koneksi lalu coba lagi.');
     } finally {
       setIsLoadingDetail(false);
+    }
+  };
+
+  /** Buka rincian satu pos. Akordeon selalu mulai tertutup. */
+  const openPos = (posId: number) => {
+    if (!(posOccupants[posId] || []).length) return;   // pos kosong, tidak perlu dibuka
+    setOpenPosId(posId);
+    setExpandedKey(null);
+  };
+
+  /**
+   * Buka/tutup rincian satu rombongan. Daftar anggota diambil sekali lalu
+   * disimpan di cache, supaya membuka-tutup berulang tidak memanggil ulang.
+   */
+  const toggleGrup = async (grup: PosSimaksi) => {
+    if (expandedKey === grup.key) { setExpandedKey(null); return; }
+    setExpandedKey(grup.key);
+
+    if (grup.simaksiId !== null && !memberCache[grup.simaksiId]) {
+      const anggota = await getSimaksiMembers(grup.simaksiId);
+      setMemberCache(prev => ({ ...prev, [grup.simaksiId as number]: anggota }));
     }
   };
 
@@ -781,16 +852,28 @@ export default function AdminDashboard() {
             const data = hikerLocations[pos.id] || { ascent: 0, descent: 0 };
             const count = data.ascent + data.descent;
             const percentage = totalActive > 0 ? (count / totalActive) * 100 : 0;
+            const bisaDibuka = count > 0;
             return (
               <div key={pos.id}>
-                <div className="flex justify-between items-center text-xs mb-3">
-                  <span className="font-bold text-slate-400">{pos.name}</span>
+                <button
+                  type="button"
+                  onClick={() => openPos(pos.id)}
+                  disabled={!bisaDibuka}
+                  title={bisaDibuka ? `Lihat rombongan di ${pos.name}` : 'Tidak ada pendaki di pos ini'}
+                  className={`w-full text-left flex justify-between items-center text-xs mb-3 rounded-xl transition-colors ${
+                    bisaDibuka ? 'cursor-pointer hover:bg-white/5 -mx-2 px-2 py-1' : 'cursor-default'
+                  }`}
+                >
+                  <span className="font-bold text-slate-400 flex items-center gap-1.5">
+                    {pos.name}
+                    {bisaDibuka && <ChevronRight className="w-3 h-3 text-slate-600" />}
+                  </span>
                   <div className="flex gap-2">
                     {data.ascent > 0 && <span className="font-black text-emerald-400 px-2 py-0.5 bg-emerald-400/10 rounded-lg">↑ {data.ascent}</span>}
                     {data.descent > 0 && <span className="font-black text-blue-400 px-2 py-0.5 bg-blue-400/10 rounded-lg">↓ {data.descent}</span>}
                     {count === 0 && <span className="text-[8px] text-slate-600 uppercase font-black tracking-widest opacity-30 mt-1">Kosong</span>}
                   </div>
-                </div>
+                </button>
                 <div className="h-2 bg-white/5 rounded-full overflow-hidden flex">
                   {totalActive > 0 && (
                     <>
@@ -1039,6 +1122,166 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
+
+      {/* ================= RINCIAN PENGHUNI POS ================= */}
+      <AnimatePresence>
+        {openPosId !== null && (
+          <motion.div
+            key="pos-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 m-0 bg-slate-950/70 backdrop-blur-sm z-[2200] flex items-end sm:items-center justify-center p-4"
+            onClick={() => setOpenPosId(null)}
+          >
+            <motion.div
+              initial={{ y: 28, scale: 0.97, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              exit={{ y: 20, scale: 0.98, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+              className="w-full max-w-lg bg-slate-900 rounded-[36px] overflow-hidden shadow-2xl max-h-[85vh] flex flex-col text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-7 pb-5 shrink-0 border-b border-white/5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Mountain className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">Rombongan di Pos</span>
+                    </div>
+                    <h3 className="text-xl font-black italic uppercase tracking-tight leading-tight break-words">
+                      {MOUNTAIN_POS[openPosId]?.name}
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+                      {MOUNTAIN_POS[openPosId]?.elevation} mdpl ·{' '}
+                      {(posOccupants[openPosId] || []).reduce((n, g) => n + g.pendaki.length, 0)} pendaki
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setOpenPosId(null)}
+                    className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-5 space-y-2 flex-1 overflow-y-auto">
+                {(posOccupants[openPosId] || []).map(grup => {
+                  const terbuka = expandedKey === grup.key;
+                  const anggota = grup.simaksiId !== null ? memberCache[grup.simaksiId] : undefined;
+                  return (
+                    <div
+                      key={grup.key}
+                      className={`rounded-3xl border overflow-hidden transition-colors ${
+                        terbuka ? 'bg-white/[0.07] border-emerald-500/30' : 'bg-white/[0.03] border-white/5'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleGrup(grup)}
+                        className="w-full text-left p-4 flex items-center justify-between gap-3 hover:bg-white/[0.04] transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-black text-sm text-white truncate">{grup.kodeSimaksi}</div>
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate mt-0.5">
+                            <Crown className="w-2.5 h-2.5 inline text-amber-500 mr-1 -mt-0.5" />
+                            {grup.ketuaName} · {grup.pendaki.length} pendaki
+                          </div>
+                        </div>
+                        <motion.div
+                          animate={{ rotate: terbuka ? 180 : 0 }}
+                          transition={{ duration: 0.22 }}
+                          className="shrink-0"
+                        >
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                        </motion.div>
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {terbuka && (
+                          <motion.div
+                            key="isi"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ height: { duration: 0.26, ease: [0.4, 0, 0.2, 1] }, opacity: { duration: 0.18 } }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-4 pb-4 pt-1 space-y-3">
+                              <div>
+                                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500">Ketua</span>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <Crown className="w-3 h-3 text-amber-500 shrink-0" />
+                                  <span className="text-xs font-bold text-white truncate">{grup.ketuaName}</span>
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500">
+                                  Anggota {anggota ? `(${anggota.length})` : ''}
+                                </span>
+                                <div className="mt-1.5 space-y-1.5">
+                                  {grup.simaksiId === null ? (
+                                    <p className="text-[10px] font-bold text-slate-500 italic">
+                                      Data rombongan tidak tersedia untuk log lama ini.
+                                    </p>
+                                  ) : anggota === undefined ? (
+                                    <p className="text-[10px] font-bold text-slate-500 italic">Memuat…</p>
+                                  ) : anggota.length === 0 ? (
+                                    <p className="text-[10px] font-bold text-slate-500 italic">
+                                      Pendakian solo — tanpa anggota tambahan.
+                                    </p>
+                                  ) : (
+                                    anggota.map((a, i) => (
+                                      <div key={a.id || i} className="flex items-center gap-2">
+                                        <User className="w-3 h-3 text-slate-500 shrink-0" />
+                                        <span className="text-xs font-bold text-slate-300 truncate">{a.name}</span>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="pt-1">
+                                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500">Terpantau di pos ini</span>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {grup.pendaki.map((h, i) => (
+                                    <span
+                                      key={i}
+                                      className={`text-[9px] font-bold px-2 py-1 rounded-lg ${
+                                        h.direction === 'ASCENT'
+                                          ? 'bg-emerald-400/10 text-emerald-400'
+                                          : 'bg-blue-400/10 text-blue-400'
+                                      }`}
+                                    >
+                                      {h.direction === 'ASCENT' ? '↑' : '↓'} {h.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {grup.simaksiId !== null && (
+                                <button
+                                  onClick={() => { setOpenPosId(null); openSimaksiDetail(grup.simaksiId as number); }}
+                                  className="w-full mt-1 py-2.5 bg-white/5 hover:bg-white/10 text-[9px] font-black uppercase tracking-widest rounded-xl transition-colors text-slate-300"
+                                >
+                                  Lihat Detail SIMAKSI
+                                </button>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ================= DETAIL SIMAKSI (dari log aktivitas / pencarian) ================= */}
       {isDetailOpen && (
