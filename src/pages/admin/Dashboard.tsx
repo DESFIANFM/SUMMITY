@@ -150,6 +150,8 @@ export default function AdminDashboard() {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [memberCache, setMemberCache] = useState<Record<number, { id: string; name: string }[]>>({});
   const [detailGearKodes, setDetailGearKodes] = useState<string[] | null>(null);
+  // Ceklis untuk modal persetujuan — modal terpisah dari modal detail
+  const [approveGearKodes, setApproveGearKodes] = useState<string[] | null>(null);
 
   // Konteks check-in: baris log yang diklik, dan posisi aktual rombongan
   const [detailFromLog, setDetailFromLog] = useState<{ posId: number; timestamp: string; type?: string } | null>(null);
@@ -329,6 +331,17 @@ export default function AdminDashboard() {
     }
   };
 
+  /** Buka modal persetujuan sekaligus memuat ceklis perlengkapannya. */
+  const openApproval = (item: any) => {
+    setSelectedSimaksi(item);
+    setApproveGearKodes(null);
+    if (item?.simaksiId) {
+      getSimaksiGear(item.simaksiId).then(g => setApproveGearKodes(g.map(x => x.kode)));
+    } else {
+      setApproveGearKodes([]);
+    }
+  };
+
   /** Buka rincian satu pos. Akordeon selalu mulai tertutup. */
   const openPos = (posId: number) => {
     if (!(posOccupants[posId] || []).length) return;   // pos kosong, tidak perlu dibuka
@@ -440,7 +453,7 @@ export default function AdminDashboard() {
               >
                 <div
                   className="flex items-center gap-4 cursor-pointer flex-1"
-                  onClick={() => setSelectedSimaksi(item)}
+                  onClick={() => openApproval(item)}
                 >
                   <div className="bg-slate-100 p-3 rounded-2xl group-hover:bg-emerald-50 transition-colors">
                     <Calendar className="w-6 h-6 text-slate-400 group-hover:text-emerald-600" />
@@ -555,6 +568,53 @@ export default function AdminDashboard() {
                 <span className="font-black text-amber-700 uppercase text-xs bg-amber-100 px-3 py-1 rounded-xl">
                   {selectedSimaksi.status}
                 </span>
+              </div>
+
+              {/* Ceklis perlengkapan yang dinyatakan pendaki — untuk diverifikasi
+                  petugas sebelum menyetujui. Hanya untuk dilihat. */}
+              <div className="p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Package className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Perlengkapan Wajib</span>
+                  </div>
+                  {approveGearKodes && gearCatalog.length > 0 && (
+                    <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg shrink-0 ${
+                      approveGearKodes.length >= gearCatalog.length
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {approveGearKodes.length}/{gearCatalog.length}
+                    </span>
+                  )}
+                </div>
+
+                {approveGearKodes === null ? (
+                  <p className="text-[10px] font-bold text-slate-300 italic">Memuat…</p>
+                ) : approveGearKodes.length === 0 ? (
+                  <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                    Ceklis tidak tercatat. SIMAKSI ini diajukan sebelum pencatatan
+                    perlengkapan diaktifkan — periksa barang secara langsung.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                    {gearCatalog.map(item => {
+                      const dicentang = approveGearKodes.includes(item.kode);
+                      return (
+                        <div key={item.kode} className="flex items-start gap-2">
+                          {dicentang
+                            ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                            : <Square className="w-3.5 h-3.5 text-slate-300 shrink-0 mt-0.5" />}
+                          <span className={`text-[11px] font-bold leading-tight ${
+                            dicentang ? 'text-slate-700' : 'text-slate-300'
+                          }`}>
+                            {item.namaBarang}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-4 pt-2">
