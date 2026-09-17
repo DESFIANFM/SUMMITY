@@ -69,9 +69,16 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
     setCheckedGears(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const checkedCount = Object.values(checkedGears).filter(Boolean).length;
-  const allGearChecked = gearList.length > 0 && checkedCount === gearList.length;
-  const canSubmit = !isLeader || allGearChecked;
+  // Barang PERSONAL wajib untuk semua pendaki — headlamp, jaket, sepatu,
+  // air minum dan sejenisnya tetap dibutuhkan meski mendaki sendirian.
+  // Barang KELOMPOK (tenda, kompor, nesting) hanya relevan bagi ketua.
+  const gearPersonal = gearList.filter(g => g.kategori !== 'KELOMPOK');
+  const gearKelompok = gearList.filter(g => g.kategori === 'KELOMPOK');
+  const gearWajib = isLeader ? gearList : gearPersonal;
+
+  const checkedCount = gearWajib.filter(g => checkedGears[g.kode]).length;
+  const allGearChecked = gearWajib.length > 0 && checkedCount === gearWajib.length;
+  const canSubmit = allGearChecked;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,7 +211,15 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
               checked={isLeader}
               onChange={(e) => {
                 setIsLeader(e.target.checked);
-                if (!e.target.checked) setCheckedGears({});
+                // Centang barang pribadi tetap dipertahankan; hanya barang
+                // kelompok yang dilepas saat batal jadi ketua.
+                if (!e.target.checked) {
+                  setCheckedGears(prev => {
+                    const next = { ...prev };
+                    gearKelompok.forEach(g => delete next[g.kode]);
+                    return next;
+                  });
+                }
               }}
               className="peer h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 accent-emerald-600"
             />
@@ -246,55 +261,59 @@ export default function InlineSimaksiForm({ onSuccess, onCancel }: InlineSimaksi
                 </p>
               )}
 
-              {/* Checklist Gear — hanya untuk ketua */}
-              <div className="border border-emerald-100 bg-emerald-50/10 p-4 rounded-2xl space-y-3 text-left">
-                <div className="flex items-center gap-1.5 border-b border-emerald-100/40 pb-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <div>
-                    <h4 className="text-[10px] font-black text-emerald-800 uppercase tracking-tight">Perlengkapan Wajib Kelompok</h4>
-                    <p className="text-[7.5px] text-emerald-500 font-bold uppercase tracking-wider leading-none mt-0.5">
-                      Ketua wajib memastikan seluruh perlengkapan tersedia
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
-                  {gearList.map((item) => (
-                    <div
-                      key={item.kode}
-                      onClick={() => handleToggleGear(item.kode)}
-                      className={`flex items-start gap-2.5 p-2 rounded-xl border text-[10px] font-bold cursor-pointer transition-all select-none ${
-                        checkedGears[item.kode]
-                          ? 'bg-emerald-50 bg-opacity-40 border-emerald-200 text-emerald-800'
-                          : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checkedGears[item.kode] || false}
-                        readOnly
-                        className="peer h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 accent-emerald-600 mt-0.5 pointer-events-none"
-                      />
-                      <div className="flex-1 flex justify-between gap-2">
-                        <span className="uppercase">{item.namaBarang}</span>
-                        <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded leading-none ${
-                          item.kategori === 'KELOMPOK' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {item.kategori}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {formErrors.gear && (
-                  <p className="text-[8px] text-rose-500 font-black text-center uppercase tracking-wider mt-1">
-                    {formErrors.gear}
-                  </p>
-                )}
-              </div>
             </div>
           )}
+
+          {/* Ceklis perlengkapan: barang pribadi wajib untuk semua,
+              barang kelompok hanya saat mendaftar sebagai ketua */}
+          <div className="border border-emerald-100 bg-emerald-50/10 p-4 rounded-2xl space-y-3 text-left">
+            <div className="flex items-center gap-1.5 border-b border-emerald-100/40 pb-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <div>
+                <h4 className="text-[10px] font-black text-emerald-800 uppercase tracking-tight">
+                  {isLeader ? 'Perlengkapan Wajib Kelompok & Pribadi' : 'Perlengkapan Wajib Pribadi'}
+                </h4>
+                <p className="text-[7.5px] text-emerald-500 font-bold uppercase tracking-wider leading-none mt-0.5">
+                  {isLeader ? 'Ketua wajib memastikan seluruh perlengkapan tersedia' : 'Pastikan seluruh perlengkapan pribadi Anda tersedia'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+              {gearWajib.map((item) => (
+                <div
+                  key={item.kode}
+                  onClick={() => handleToggleGear(item.kode)}
+                  className={`flex items-start gap-2.5 p-2 rounded-xl border text-[10px] font-bold cursor-pointer transition-all select-none ${
+                    checkedGears[item.kode]
+                      ? 'bg-emerald-50 bg-opacity-40 border-emerald-200 text-emerald-800'
+                      : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checkedGears[item.kode] || false}
+                    readOnly
+                    className="peer h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 accent-emerald-600 mt-0.5 pointer-events-none"
+                  />
+                  <div className="flex-1 flex justify-between gap-2">
+                    <span className="uppercase">{item.namaBarang}</span>
+                    <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded leading-none ${
+                      item.kategori === 'KELOMPOK' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {item.kategori}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {formErrors.gear && (
+              <p className="text-[8px] text-rose-500 font-black text-center uppercase tracking-wider mt-1">
+                {formErrors.gear}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Submit */}

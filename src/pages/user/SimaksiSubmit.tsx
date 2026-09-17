@@ -44,9 +44,16 @@ export default function SubmitSimaksi() {
     endDate: '',
   });
 
-  const checkedCount = Object.values(checkedGears).filter(Boolean).length;
-  const allGearChecked = gearList.length > 0 && checkedCount === gearList.length;
-  const canSubmit = !isLeader || allGearChecked;
+  // Barang PERSONAL wajib untuk semua pendaki — headlamp, jaket, sepatu,
+  // air minum dan sejenisnya tetap dibutuhkan meski mendaki sendirian.
+  // Barang KELOMPOK (tenda, kompor, nesting) hanya relevan bagi ketua.
+  const gearPersonal = gearList.filter(g => g.kategori !== 'KELOMPOK');
+  const gearKelompok = gearList.filter(g => g.kategori === 'KELOMPOK');
+  const gearWajib = isLeader ? gearList : gearPersonal;
+
+  const checkedCount = gearWajib.filter(g => checkedGears[g.kode]).length;
+  const allGearChecked = gearWajib.length > 0 && checkedCount === gearWajib.length;
+  const canSubmit = allGearChecked;
 
   /** Validasi pilihan dari pencarian; null bila berhasil ditambahkan. */
   const handlePickMember = (p: PendakiRef): string | null => {
@@ -212,6 +219,15 @@ export default function SubmitSimaksi() {
             checked={isLeader}
             onChange={(e) => {
               setIsLeader(e.target.checked);
+              // Centang barang pribadi dipertahankan; hanya barang kelompok
+              // yang dilepas saat batal mendaftar sebagai ketua.
+              if (!e.target.checked) {
+                setCheckedGears(prev => {
+                  const next = { ...prev };
+                  gearKelompok.forEach(g => delete next[g.kode]);
+                  return next;
+                });
+              }
               if (formErrors.gear) setFormErrors({...formErrors, gear: ''});
             }}
             className="peer h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600 mt-0.5 shrink-0"
@@ -309,65 +325,66 @@ export default function SubmitSimaksi() {
               )}
             </div>
 
-            {/* MANDATORY GEARS CHECKBOX LIST */}
-            <div className="bg-emerald-50/10 border border-emerald-100 p-4 rounded-3xl space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-emerald-100/50 pb-2 text-left">
-                <div>
-                  <h4 className="text-xs font-black text-emerald-800 uppercase tracking-tight flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    Perlengkapan Wajib Kelompok
-                  </h4>
-                  <p className="text-[8px] text-emerald-600 font-bold uppercase tracking-widest mt-0.5">Ketua harus memastikan semua perlengkapan berikut telah lengkap</p>
-                </div>
-                <div className="bg-emerald-100 text-emerald-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded leading-none">
-                  {Object.values(checkedGears).filter(v => v).length} / {gearList.length} Lengkap
-                </div>
-              </div>
-
-              {/* Gears Grid List */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                {gearList.map((item) => (
-                  <button
-                    key={item.kode}
-                    type="button"
-                    onClick={() => {
-                      setCheckedGears({
-                        ...checkedGears,
-                        [item.kode]: !checkedGears[item.kode]
-                      });
-                      if (formErrors.gear) setFormErrors({...formErrors, gear: ''});
-                    }}
-                    className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all relative ${
-                      checkedGears[item.kode]
-                        ? 'bg-emerald-50/20 border-emerald-300 text-emerald-950'
-                        : 'bg-white border-slate-200 hover:bg-slate-55/40'
-                    }`}
-                  >
-                    <div className="mt-0.5 shrink-0">
-                      {checkedGears[item.kode] ? (
-                        <CheckSquare className="w-4 h-4 text-emerald-600" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="text-[10px] sm:text-[10.5px] leading-tight grow">
-                      <span className={`block font-black text-[6.5px] uppercase tracking-wider leading-none mb-0.5 ${
-                        item.kategori === 'KELOMPOK' ? 'text-blue-500' : 'text-amber-500'
-                      }`}>
-                        Bagian {item.kategori === 'KELOMPOK' ? 'Kelompok' : 'Pribadi'}
-                      </span>
-                      <span className={`font-bold block ${checkedGears[item.kode] ? 'text-slate-500 line-through opacity-70' : 'text-slate-700'}`}>
-                        {item.namaBarang}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Ceklis perlengkapan: barang pribadi wajib untuk semua,
+          barang kelompok hanya saat mendaftar sebagai ketua */}
+      <div className="bg-emerald-50/10 border border-emerald-100 p-4 rounded-3xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-emerald-100/50 pb-2 text-left">
+          <div>
+            <h4 className="text-xs font-black text-emerald-800 uppercase tracking-tight flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              {isLeader ? 'Perlengkapan Wajib Kelompok & Pribadi' : 'Perlengkapan Wajib Pribadi'}
+            </h4>
+            <p className="text-[8px] text-emerald-600 font-bold uppercase tracking-widest mt-0.5">{isLeader ? 'Ketua harus memastikan semua perlengkapan berikut telah lengkap' : 'Pastikan seluruh perlengkapan pribadi Anda telah lengkap'}</p>
+          </div>
+          <div className="bg-emerald-100 text-emerald-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded leading-none">
+            {checkedCount} / {gearWajib.length} Lengkap
+          </div>
+        </div>
+
+        {/* Gears Grid List */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+          {gearWajib.map((item) => (
+            <button
+              key={item.kode}
+              type="button"
+              onClick={() => {
+                setCheckedGears({
+                  ...checkedGears,
+                  [item.kode]: !checkedGears[item.kode]
+                });
+                if (formErrors.gear) setFormErrors({...formErrors, gear: ''});
+              }}
+              className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all relative ${
+                checkedGears[item.kode]
+                  ? 'bg-emerald-50/20 border-emerald-300 text-emerald-950'
+                  : 'bg-white border-slate-200 hover:bg-slate-55/40'
+              }`}
+            >
+              <div className="mt-0.5 shrink-0">
+                {checkedGears[item.kode] ? (
+                  <CheckSquare className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-300" />
+                )}
+              </div>
+              <div className="text-[10px] sm:text-[10.5px] leading-tight grow">
+                <span className={`block font-black text-[6.5px] uppercase tracking-wider leading-none mb-0.5 ${
+                  item.kategori === 'KELOMPOK' ? 'text-blue-500' : 'text-amber-500'
+                }`}>
+                  Bagian {item.kategori === 'KELOMPOK' ? 'Kelompok' : 'Pribadi'}
+                </span>
+                <span className={`font-bold block ${checkedGears[item.kode] ? 'text-slate-500 line-through opacity-70' : 'text-slate-700'}`}>
+                  {item.namaBarang}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="pt-4 border-t border-slate-100 flex flex-col items-stretch justify-between gap-3 text-left">
         <p className="text-[8px] text-slate-400 font-extrabold uppercase tracking-widest leading-relaxed">
@@ -385,7 +402,7 @@ export default function SubmitSimaksi() {
         >
           {canSubmit
             ? <>Kirim Rencana SIMAKSI <ArrowRight className="w-4 h-4" /></>
-            : `Lengkapi Perlengkapan (${checkedCount}/${gearList.length})`
+            : `Lengkapi Perlengkapan (${checkedCount}/${gearWajib.length})`
           }
         </button>
       </div>
