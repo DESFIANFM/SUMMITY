@@ -64,10 +64,6 @@ export default function UserDashboard() {
          
       setActiveTicket(latestTicket || null);
 
-      if (user?.id) {
-        const scanTerakhir = await getLastScanForUsers([user.id]);
-        setSudahJalan(scanTerakhir !== null);
-      }
 
       const latestScansByTicket: Record<string, { type: string; direction: 'ASCENT' | 'DESCENT' }> = {};
       const sortedScans = [...scans].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -103,6 +99,16 @@ export default function UserDashboard() {
         ]);
         setUserActiveSimaksi(activeSimaksi);
         setRejectedSimaksi(rejected);
+
+        // Perjalanan dianggap dimulai hanya bila ada scan SETELAH simaksi ini
+        // dibuat. Tanpa batas waktu, riwayat pendakian lama membuat banner
+        // langsung berbunyi "sedang dalam perjalanan" padahal belum berangkat.
+        if (activeSimaksi?.createdAt) {
+          const scanTerakhir = await getLastScanForUsers([user.id], activeSimaksi.createdAt);
+          setSudahJalan(scanTerakhir !== null);
+        } else {
+          setSudahJalan(false);
+        }
       }
     };
     fetchData();

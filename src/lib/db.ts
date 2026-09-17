@@ -828,14 +828,22 @@
    * hilang dari sana. Di sini query langsung ke tracking_history, sehingga
    * posisi yang ditampilkan benar-benar posisi aktual.
    */
-  export async function getLastScanForUsers(userIds: string[]): Promise<LastScanInfo | null> {
+  export async function getLastScanForUsers(
+    userIds: string[],
+    /** Abaikan scan sebelum waktu ini — dipakai untuk membatasi ke satu perjalanan. */
+    sinceIso?: string,
+  ): Promise<LastScanInfo | null> {
     const supabase = getSupabaseClient();
     if (!supabase || !userIds?.length) return null;
 
-    const { data, error } = await supabase
+    let q = supabase
       .from('tracking_history')
       .select('pos_id, scanned_at, user_id, validation_status')
-      .in('user_id', userIds)
+      .in('user_id', userIds);
+
+    if (sinceIso) q = q.gte('scanned_at', sinceIso);
+
+    const { data, error } = await q
       .order('scanned_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -953,6 +961,8 @@
     tanggalNaik: string;
     tanggalTurun: string;
     isKetua: boolean;
+    /** Dipakai membedakan scan perjalanan ini dari riwayat pendakian lama. */
+    createdAt: string | null;
   } | null> {
     const ACTIVE_STATUSES = ['draft', 'pending', 'approved'];
     const supabase = getSupabaseClient();
@@ -961,7 +971,7 @@
       // Cek sebagai ketua
       const { data: asKetua } = await supabase
         .from('simaksi')
-        .select('id, status, ketua_user_id, tanggal_naik, tanggal_turun')
+        .select('id, status, ketua_user_id, tanggal_naik, tanggal_turun, created_at')
         .eq('ketua_user_id', userId)
         .in('status', ACTIVE_STATUSES)
         .order('created_at', { ascending: false })
@@ -978,13 +988,14 @@
           tanggalNaik: asKetua.tanggal_naik,
           tanggalTurun: asKetua.tanggal_turun,
           isKetua: true,
+          createdAt: asKetua.created_at ?? null,
         };
       }
 
       // Cek sebagai anggota
       const { data: asAnggota } = await supabase
         .from('simaksi_anggota')
-        .select('simaksi_id, simaksi!inner(id, status, ketua_user_id, tanggal_naik, tanggal_turun)')
+        .select('simaksi_id, simaksi!inner(id, status, ketua_user_id, tanggal_naik, tanggal_turun, created_at)')
         .eq('user_id', userId)
         .in('simaksi.status', ACTIVE_STATUSES)
         .limit(1)
@@ -1001,6 +1012,7 @@
           tanggalNaik: s.tanggal_naik,
           tanggalTurun: s.tanggal_turun,
           isKetua: false,
+          createdAt: s.created_at ?? null,
         };
       }
 
@@ -1023,6 +1035,7 @@
       tanggalNaik: found.tanggalNaik,
       tanggalTurun: found.tanggalTurun,
       isKetua: found.ketuaUserId === userId,
+      createdAt: found.createdAt ?? null,
     };
   }
 
