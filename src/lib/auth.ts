@@ -28,6 +28,8 @@
     error: string | null;
     /** true bila akun dibuat tapi masih menunggu konfirmasi email */
     needsEmailConfirmation?: boolean;
+    /** Kolom pendaftaran yang ternyata sudah dipakai akun lain. */
+    takenFields?: Array<'username' | 'email' | 'nik'>;
   }
 
   /** Ubah baris snake_case dari tabel `users` menjadi objek User camelCase. */
@@ -146,6 +148,24 @@
       return { user: null, error: 'Aplikasi berjalan tanpa koneksi server. Pendaftaran tidak tersedia.' };
     }
 
+    // Cek ketersediaan SEBELUM membuat akun Auth. Kalau dicek sesudahnya,
+    // pendaftaran yang gagal meninggalkan akun Auth tanpa profil.
+    const { data: cek, error: cekError } = await supabase.rpc('cek_ketersediaan_registrasi', {
+      p_username: params.username.toLowerCase().trim(),
+      p_email: params.email.trim(),
+      p_nik: String(params.profile?.nik ?? ''),
+    });
+    if (cekError) {
+      // Tidak menggagalkan pendaftaran; unique constraint di database tetap
+      // menjadi pengaman terakhir.
+      console.warn('[AUTH] Cek ketersediaan gagal:', cekError.message);
+    } else if (cek) {
+      const takenFields = (['username', 'email', 'nik'] as const).filter(k => (cek as any)[k]);
+      if (takenFields.length) {
+        return { user: null, error: 'Data pendaftaran sudah dipakai akun lain.', takenFields: [...takenFields] };
+      }
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email: params.email.trim(),
       password: params.password,
@@ -168,8 +188,19 @@
     });
 
     if (profileError) {
-      console.warn('[AUTH] Akun Auth dibuat tapi profil gagal disimpan:', profileError.message);
-      return { user: null, error: 'Akun dibuat tapi data diri gagal disimpan. Hubungi petugas.' };
+      console.warn('[AUTH] Profil gagal disimpan:', profileError.message);
+      // Pengaman bila dua orang mendaftar dengan data sama hampir bersamaan
+      // (lolos cek di atas, lalu bentrok di UNIQUE constraint).
+      const msg = profileError.message || '';
+      const takenFields = ([
+        ['username', 'users_username_key'],
+        ['email', 'users_email_key'],
+        ['nik', 'users_nik_key'],
+      ] as const).filter(([, c]) => msg.includes(c)).map(([f]) => f);
+      if (takenFields.length) {
+        return { user: null, error: 'Data pendaftaran sudah dipakai akun lain.', takenFields: [...takenFields] };
+      }
+      return { user: null, error: 'Data diri gagal disimpan. Silakan coba lagi.' };
     }
 
     // Kalau "Confirm email" aktif di dashboard, signUp tidak mengembalikan sesi.

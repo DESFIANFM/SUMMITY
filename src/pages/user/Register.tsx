@@ -227,7 +227,7 @@ export default function Register() {
     // perlu tahu nomor urut pendaki lain.
     setIsSubmitting(true);
     try {
-      const { user: created, error, needsEmailConfirmation } = await signUpClimber({
+      const { user: created, error, needsEmailConfirmation, takenFields } = await signUpClimber({
         email: formData.email,
         password: formData.password,
         username: formData.username,
@@ -249,17 +249,21 @@ export default function Register() {
         },
       });
 
+      if (takenFields?.length) {
+        const pesan: Record<string, string> = {};
+        if (takenFields.includes('username')) pesan.username = 'Username sudah dipakai. Pilih yang lain.';
+        if (takenFields.includes('email'))    pesan.email = 'Email ini sudah terdaftar. Silakan login.';
+        if (takenFields.includes('nik'))      pesan.nik = 'NIK ini sudah terdaftar dalam sistem.';
+        setFormErrors(pesan);
+        // Pengiriman terjadi di tahap Alamat, sedangkan kolom yang bermasalah
+        // ada di tahap sebelumnya. Tanpa berpindah tahap, pesannya tidak
+        // akan pernah terlihat.
+        setActiveTab(pesan.username || pesan.email ? 'account' : 'personal');
+        return;
+      }
+
       if (error) {
-        const lowered = error.toLowerCase();
-        if (lowered.includes('already registered') || lowered.includes('already been registered')) {
-          setFormErrors({ email: 'Email ini sudah terdaftar. Silakan login.' });
-        } else if (lowered.includes('users_username_key') || lowered.includes('username')) {
-          setFormErrors({ username: 'Username sudah dipakai. Pilih yang lain.' });
-        } else if (lowered.includes('users_nik_key') || lowered.includes('nik')) {
-          setFormErrors({ nik: 'NIK ini sudah terdaftar dalam sistem.' });
-        } else {
-          setFormErrors({ address: error });
-        }
+        setFormErrors({ address: error });
         return;
       }
 
